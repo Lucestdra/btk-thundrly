@@ -19,7 +19,7 @@ export function Hero() {
           variants={stagger}
           className="grid lg:grid-cols-[1.05fr_1fr] gap-10 sm:gap-14 lg:gap-20 items-center"
         >
-          <div className="order-2 lg:order-1">
+          <div>
             <motion.h1
               variants={fadeUp}
               className="font-display text-[34px] sm:text-[52px] md:text-[64px] lg:text-[76px] font-light leading-[1.05] sm:leading-[1.02] tracking-tightest text-balance text-ink"
@@ -66,11 +66,11 @@ export function Hero() {
             </motion.ul>
           </div>
 
-          {/* Decorative product + panel mock — bandwidth and visual hierarchy
-              don't justify shipping this on phones. md+ only. */}
+          {/* Decorative product + panel mock — md+ only; on tablet (md-lg)
+              it appears BELOW the headline thanks to natural DOM order. */}
           <motion.div
             variants={fadeUp}
-            className="hidden md:flex order-1 lg:order-2 relative justify-center lg:justify-end"
+            className="hidden md:flex relative justify-center lg:justify-end"
           >
             <div className="relative w-full max-w-[540px]">
               <ProductPageMock className="opacity-70 scale-[0.96] origin-top-left" />
