@@ -91,16 +91,31 @@ h3 .italic {
     display: flex;
     flex-direction: column;
     justify-content: center;
-    padding-top: 5rem;
-    padding-bottom: 5rem;
+    /* Section vertical padding: tighter on mobile, generous on desktop. */
+    padding-top: 3rem;
+    padding-bottom: 3rem;
+  }
+  @media (min-width: 768px) {
+    .fullscreen {
+      padding-top: 5rem;
+      padding-bottom: 5rem;
+    }
   }
   .fullscreen-hero {
-    min-height: calc(100vh - 96px);
+    /* Nav is 64px (h-16) on mobile, 96px (h-24) on md+ — match both. */
+    min-height: calc(100vh - 64px);
     display: flex;
     flex-direction: column;
     justify-content: center;
-    padding-top: 3rem;
-    padding-bottom: 3rem;
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+  }
+  @media (min-width: 768px) {
+    .fullscreen-hero {
+      min-height: calc(100vh - 96px);
+      padding-top: 3rem;
+      padding-bottom: 3rem;
+    }
   }
 }
 

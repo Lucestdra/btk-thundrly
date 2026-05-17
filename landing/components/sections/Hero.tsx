@@ -17,12 +17,12 @@ export function Hero() {
           initial="hidden"
           animate="visible"
           variants={stagger}
-          className="grid lg:grid-cols-[1.05fr_1fr] gap-14 lg:gap-20 items-center"
+          className="grid lg:grid-cols-[1.05fr_1fr] gap-10 sm:gap-14 lg:gap-20 items-center"
         >
           <div className="order-2 lg:order-1">
             <motion.h1
               variants={fadeUp}
-              className="font-display text-[44px] md:text-[64px] lg:text-[76px] font-light leading-[1.02] tracking-tightest text-balance text-ink"
+              className="font-display text-[34px] sm:text-[52px] md:text-[64px] lg:text-[76px] font-light leading-[1.05] sm:leading-[1.02] tracking-tightest text-balance text-ink"
             >
               Satın almadan önce
               <br />
@@ -31,41 +31,46 @@ export function Hero() {
 
             <motion.p
               variants={fadeUp}
-              className="mt-7 lead max-w-xl text-pretty"
+              className="mt-5 sm:mt-7 lead max-w-xl text-pretty"
             >
               Yorumları, fiyat geçmişini, bütçeni ve dürtüsel alışveriş riskini analiz ederek
               sana yeşil, sarı veya kırmızı bir karar verir.
             </motion.p>
 
-            <motion.div variants={fadeUp} className="mt-9 flex flex-col sm:flex-row gap-3">
-              <a href="#demo">
+            <motion.div variants={fadeUp} className="mt-7 sm:mt-9 flex flex-col sm:flex-row gap-3">
+              <a href="#demo" className="w-full sm:w-auto">
                 <Button size="lg" variant="primary" className="w-full sm:w-auto">
                   Demo'yu Gör
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </a>
-              <a href="#cozum">
+              <a href="#cozum" className="w-full sm:w-auto">
                 <Button size="lg" variant="quiet" className="w-full sm:w-auto">
                   Nasıl Çalışır?
                 </Button>
               </a>
             </motion.div>
 
-            <motion.div
+            {/* Trust line — vertical pills on mobile, horizontal with dots on sm+ */}
+            <motion.ul
               variants={fadeUp}
-              className="mt-12 flex flex-wrap items-center gap-x-8 gap-y-3 text-[12px] text-ink-muted"
+              className="mt-8 sm:mt-12 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-y-2 sm:gap-x-6 lg:gap-x-8 text-[12px] text-ink-muted"
             >
-              <span>Trendyol, Hepsiburada, N11 uyumlu</span>
-              <span className="text-ink-faint">·</span>
-              <span>LangGraph multi-agent mimari</span>
-              <span className="text-ink-faint">·</span>
-              <span>Türkçe açıklama</span>
-            </motion.div>
+              <li className="sm:after:content-['·'] sm:after:ml-6 lg:after:ml-8 sm:after:text-ink-faint sm:last:after:content-none">
+                Trendyol, Hepsiburada, N11 uyumlu
+              </li>
+              <li className="sm:after:content-['·'] sm:after:ml-6 lg:after:ml-8 sm:after:text-ink-faint sm:last:after:content-none">
+                LangGraph multi-agent mimari
+              </li>
+              <li>Türkçe açıklama</li>
+            </motion.ul>
           </div>
 
+          {/* Decorative product + panel mock — bandwidth and visual hierarchy
+              don't justify shipping this on phones. md+ only. */}
           <motion.div
             variants={fadeUp}
-            className="order-1 lg:order-2 relative flex justify-center lg:justify-end"
+            className="hidden md:flex order-1 lg:order-2 relative justify-center lg:justify-end"
           >
             <div className="relative w-full max-w-[540px]">
               <ProductPageMock className="opacity-70 scale-[0.96] origin-top-left" />
