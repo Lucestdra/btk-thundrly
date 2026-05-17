@@ -22,7 +22,7 @@
  */
 
 import { detectHost, findBuyButtons, type Host } from "./utils/domDetector";
-import { buildAnalyzeRequest, extractCurrentObservation } from "./utils/productExtractor";
+import { buildAnalyzeRequestAsync, extractCurrentObservation } from "./utils/productExtractor";
 import { onUrlChange } from "./utils/urlWatcher";
 import { buildSessionContext, markPurchase, trackButtonForClickSpeed } from "./utils/sessionTracker";
 import { getInstallId } from "./utils/installId";
@@ -61,8 +61,15 @@ function attachToButton(btn: HTMLElement) {
         const [userId, session] = await Promise.all([
           getInstallId(),
           buildSessionContext(btn, location.href),
+          // Small DOM-settle wait — Trendyol/Hepsiburada often re-render
+          // the price area after the click. 120ms is short enough to be
+          // invisible to the user but long enough for React commits to
+          // flush.
+          new Promise((r) => setTimeout(r, 120)),
         ]);
-        const request = buildAnalyzeRequest(host, { userId, session });
+        // Async build: scroll-triggers lazy review widgets and
+        // background-fetches /yorumlar if PDP scraping comes back empty.
+        const request = await buildAnalyzeRequestAsync(host, { userId, session });
 
         mountPanel({
           request,

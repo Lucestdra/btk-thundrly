@@ -267,6 +267,61 @@ function readFromOg(): Partial<Product> {
   };
 }
 
+// ---------- Strategy 6: last-resort regex sweep ----------
+
+/**
+ * When all structured strategies miss (typical on Trendyol after a React
+ * re-render with new class names), scan the DOM near the "Sepete Ekle"
+ * button for ₺/TL currency patterns and pick the largest plausible
+ * price.
+ *
+ * Why largest: pages often show monthly-installment offers like
+ * "12 x ₺83" alongside the real "₺990" total; the real total is almost
+ * always the largest figure in the buy-button area.
+ *
+ * The search container is the buy button's nearest ancestor with at
+ * least 4 children — typically the product-info column. Falls back to
+ * the whole document only as a last-last resort.
+ */
+function regexSweepPrice(): number | undefined {
+  // Build a scope that includes the price area near a buy button.
+  const buyish = document.querySelector<HTMLElement>(
+    "button[data-test-id*='add'], button[data-testid*='add'], button[class*='add-to'], #addToCart, #addBasket",
+  );
+  let scope: Element = document.body;
+  if (buyish) {
+    let walker: Element | null = buyish;
+    for (let i = 0; i < 6 && walker?.parentElement; i++) {
+      walker = walker.parentElement;
+      if (walker.children.length >= 4) {
+        scope = walker;
+        break;
+      }
+    }
+  }
+
+  const text = (scope.textContent || "").replace(/\s+/g, " ");
+  // Match "₺1.249,90", "1.249,90 TL", "1249 TL", "TL 1.249", in either order.
+  const pattern = /(?:₺|\bTL\b)\s*([\d.,]{3,12})|\b([\d.,]{3,12})\s*(?:₺|\bTL\b)/g;
+
+  const candidates: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = pattern.exec(text)) !== null) {
+    const raw = m[1] || m[2];
+    const parsed = parsePrice(raw);
+    // Real product prices: > ₺5 (filters out shipping fees, rating numbers).
+    // Cap at ₺500k to drop obvious junk (Trendyol shows campaign totals etc).
+    if (parsed !== undefined && parsed >= 5 && parsed <= 500_000) {
+      candidates.push(parsed);
+    }
+  }
+  if (candidates.length === 0) return undefined;
+
+  // Largest tends to be the total (installments are per-month, smaller).
+  candidates.sort((a, b) => b - a);
+  return candidates[0];
+}
+
 // ---------- Priority merge ----------
 
 function mergeFields(...sources: Partial<Product>[]): Partial<Product> {
@@ -290,12 +345,21 @@ export function extractProductBasics(host: Host): Partial<Product> {
     if (demo) return demo;
   }
 
-  return mergeFields(
+  const merged = mergeFields(
     readFromLD(),
     readFromMicrodata(),
     readFromPlatform(host),
     readFromOg(),
   );
+
+  // Last resort: regex-scan for TL/₺ near the buy button when the
+  // structured strategies all returned a missing/zero price.
+  if (!merged.price || merged.price <= 0) {
+    const sweep = regexSweepPrice();
+    if (sweep !== undefined) merged.price = sweep;
+  }
+
+  return merged;
 }
 
 // ---------- Reviews extraction ----------
@@ -369,12 +433,12 @@ function _extractOneReview(container: HTMLElement, sels: ReviewSelectors): Revie
   return { rating, text, date };
 }
 
-export function extractReviews(host: Host): Review[] {
+export function extractReviews(host: Host, root: ParentNode = document): Review[] {
   const sels: ReviewSelectors | undefined =
     host === "demo" ? DEMO_REVIEW_SELECTORS : PLATFORM_PACKS[host]?.reviews;
   if (!sels) return [];
 
-  const containers = _allElements(document, sels.container);
+  const containers = _allElements(root, sels.container);
   const cap = sels.maxItems ?? 25;
   const out: Review[] = [];
   for (const c of containers.slice(0, cap)) {
@@ -382,6 +446,105 @@ export function extractReviews(host: Host): Review[] {
     if (r) out.push(r);
   }
   return out;
+}
+
+/**
+ * Async review extraction that scroll-triggers lazy widgets on Trendyol /
+ * Hepsiburada / N11 before scraping.
+ *
+ * Strategy:
+ *   1. Try a synchronous extract first — fast path for already-rendered widgets.
+ *   2. If empty, scroll the most likely review section into view (heuristic
+ *      anchors like "Yorumlar" headers or known review container classes),
+ *      wait `lazyWaitMs` for the lazy loader to commit, then re-extract.
+ *   3. If still empty, the caller can opt to background-fetch /yorumlar
+ *      via `requestReviewsFromBackground`.
+ *
+ * Honors `cap` from the per-platform selector pack.
+ */
+export async function extractReviewsAsync(host: Host, lazyWaitMs = 800): Promise<Review[]> {
+  // Fast path.
+  let reviews = extractReviews(host);
+  if (reviews.length > 0) return reviews;
+
+  // Try to trigger lazy loading by scrolling a plausible review anchor
+  // into view. Anchors are platform-agnostic so the same logic works
+  // across our 21 hosts.
+  const anchorCandidates = [
+    // Headings whose text mentions reviews (most reliable).
+    ...Array.from(document.querySelectorAll<HTMLElement>("h2, h3, h4")).filter((el) =>
+      /yorum|değerlendirme|review/i.test(el.textContent || ""),
+    ),
+    // Known container ids/data hooks across TR retailers.
+    document.querySelector<HTMLElement>("#reviews"),
+    document.querySelector<HTMLElement>("[data-testid='reviews']"),
+    document.querySelector<HTMLElement>(".reviews-section"),
+    document.querySelector<HTMLElement>(".pr-rnr-w"),
+    document.querySelector<HTMLElement>(".comments"),
+  ].filter((el): el is HTMLElement => el != null);
+
+  const anchor = anchorCandidates[0];
+  if (anchor) {
+    const prevY = window.scrollY;
+    try {
+      anchor.scrollIntoView({ block: "center", behavior: "auto" });
+      await new Promise((r) => setTimeout(r, lazyWaitMs));
+      reviews = extractReviews(host);
+    } finally {
+      // Restore scroll position so the user doesn't see the page jump.
+      window.scrollTo({ top: prevY, behavior: "auto" });
+    }
+  }
+
+  return reviews;
+}
+
+/**
+ * Background fetch of the platform's review subpage. Asks the service
+ * worker to GET the URL (CORS-friendly via host_permissions) and parse
+ * the returned HTML for reviews using the platform's selector pack.
+ *
+ * Returns ``[]`` on any error or when the platform has no known subpage
+ * route. Currently supports trendyol + hepsiburada.
+ */
+export async function requestReviewsFromBackground(host: Host): Promise<Review[]> {
+  const subpageUrl = reviewSubpageUrl(host, location.href);
+  if (!subpageUrl) return [];
+  try {
+    const resp = await chrome.runtime.sendMessage<
+      { type: "fetchReviews"; payload: { url: string; host: Host } },
+      { ok: true; reviews: Review[] } | { ok: false; error: string }
+    >({ type: "fetchReviews", payload: { url: subpageUrl, host } });
+    if (resp && resp.ok) return resp.reviews;
+  } catch (e) {
+    console.warn("[Thundrly] yorumlar arka plan fetch'i başarısız:", e);
+  }
+  return [];
+}
+
+/** Resolve the platform's "all reviews" subpage URL. */
+function reviewSubpageUrl(host: Host, pdpUrl: string): string | null {
+  try {
+    const u = new URL(pdpUrl);
+    if (host === "trendyol") {
+      // Trendyol: <product-slug>-p-<id>/yorumlar
+      // Strategy: append "/yorumlar" to the pathname if not already there.
+      if (!u.pathname.endsWith("/yorumlar")) {
+        u.pathname = u.pathname.replace(/\/$/, "") + "/yorumlar";
+      }
+      return u.toString();
+    }
+    if (host === "hepsiburada") {
+      // Hepsiburada: <slug>-p-<id>/yorumlari
+      if (!u.pathname.endsWith("/yorumlari")) {
+        u.pathname = u.pathname.replace(/\/$/, "") + "/yorumlari";
+      }
+      return u.toString();
+    }
+  } catch {
+    /* fall through */
+  }
+  return null;
 }
 
 // ---------- Public API ----------
@@ -438,6 +601,33 @@ export function buildAnalyzeRequest(
     priceHistory,
     session: opts.session,
   };
+}
+
+/**
+ * Async variant that tries harder for reviews:
+ *   1. Synchronous extract (current DOM).
+ *   2. Scroll-trigger lazy widget + wait + re-extract.
+ *   3. Background-fetch the /yorumlar subpage (Trendyol + Hepsiburada).
+ *
+ * Use this from the content script when the user clicks a buy button —
+ * the extra latency (~1s worst case) is acceptable because the panel
+ * shows a loading state while agents run.
+ */
+export async function buildAnalyzeRequestAsync(
+  host: Host,
+  opts: BuildAnalyzeRequestOptions,
+): Promise<AnalyzeRequest> {
+  const base = buildAnalyzeRequest(host, opts);
+  if (base.reviews && base.reviews.length > 0) return base;
+
+  // Try scroll-trigger first — cheap.
+  let reviews = await extractReviewsAsync(host);
+  if (reviews.length === 0) {
+    // Last resort: subpage fetch via background.
+    reviews = await requestReviewsFromBackground(host);
+  }
+
+  return { ...base, reviews };
 }
 
 /**

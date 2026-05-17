@@ -97,11 +97,19 @@ def analyze_purchase_stream(
     payload: AnalyzeRequest = Body(...),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    # Same DB-history fallback as the non-streaming endpoint.
+    # Same priority chain as the non-streaming endpoint:
+    # body > crowdsource DB > external (Akakçe).
     if not payload.priceHistory and payload.product.url:
         fetched = get_recent(db, payload.product.url, days=90)
         if fetched:
             payload = payload.model_copy(update={"priceHistory": fetched})
+
+    if not payload.priceHistory and payload.product.title:
+        from app.services.external_price_history import fetch_for_product
+
+        external = fetch_for_product(payload.product.title)
+        if external:
+            payload = payload.model_copy(update={"priceHistory": external})
 
     def generate() -> Iterator[str]:
         try:
