@@ -1,0 +1,57 @@
+{
+  "manifest_version": 3,
+  "name": "Tartı",
+  "short_name": "Tartı",
+  "version": "0.1.0",
+  "description": "Satın almadan önce 5 saniyelik akıllı kontrol — Türk e-ticaret için AI alışveriş asistanı.",
+  "action": {
+    "default_title": "Tartı",
+    "default_icon": {
+      "16": "public/icons/icon-16.png",
+      "32": "public/icons/icon-32.png",
+      "48": "public/icons/icon-48.png",
+      "128": "public/icons/icon-128.png"
+    }
+  },
+  "icons": {
+    "16": "public/icons/icon-16.png",
+    "32": "public/icons/icon-32.png",
+    "48": "public/icons/icon-48.png",
+    "128": "public/icons/icon-128.png"
+  },
+  "background": {
+    "service_worker": "src/background.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.trendyol.com/*",
+        "*://*.hepsiburada.com/*",
+        "*://*.n11.com/*"
+      ],
+      "js": ["src/contentScript.ts"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["<all_urls>"],
+      "js": ["src/contentScript.ts"],
+      "run_at": "document_idle",
+      "include_globs": ["*demo-product.html*"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["public/demo-product.html"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:8000/*",
+    "http://localhost:8000/*",
+    "https://*.trendyol.com/*",
+    "https://*.hepsiburada.com/*",
+    "https://*.n11.com/*"
+  ],
+  "permissions": ["storage"]
+}

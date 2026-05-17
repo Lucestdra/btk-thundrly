@@ -1,0 +1,56 @@
+<!--
+  Realistic-enough Trendyol product page snippet for the red-hoodie fixture.
+  Mirrors the structure of an actual trendyol.com product detail page:
+    - <script type="application/ld+json"> Product schema with current price
+    - Breadcrumb `<div class="breadcrumb-content">` with anchors
+    - Discounted price in `.prc-dsc`, original strikethrough in `.prc-org`
+    - Rating + review count in their respective containers
+  Turkish thousand-dot decimal-comma formatting on every price so the parser
+  is exercised on real-world strings.
+-->
+<head>
+  <title>Oversize Siyah Hoodie | Trendyol</title>
+  <meta property="og:title" content="Oversize Siyah Hoodie" />
+  <meta property="og:image" content="https://cdn.trendyol.com/img/hoodie.jpg" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Oversize Siyah Hoodie",
+      "image": "https://cdn.trendyol.com/img/hoodie.jpg",
+      "offers": {
+        "@type": "Offer",
+        "price": "990.00",
+        "priceCurrency": "TRY",
+        "availability": "https://schema.org/InStock"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.7",
+        "reviewCount": 842
+      }
+    }
+  </script>
+</head>
+<body>
+  <nav>
+    <div class="breadcrumb-content">
+      <a href="/">Anasayfa</a>
+      <a href="/giyim">Giyim</a>
+    </div>
+  </nav>
+  <main>
+    <h1 data-testid="product-title">Oversize Siyah Hoodie</h1>
+    <div class="product-price-container">
+      <span class="prc-org">1.650,00 TL</span>
+      <span class="prc-dsc">990,00 TL</span>
+    </div>
+    <div class="product-rating-score">
+      <span class="value">4.7</span>
+    </div>
+    <div class="total-review-count">842</div>
+    <div class="gallery-modal-content">
+      <img src="https://cdn.trendyol.com/img/hoodie.jpg" alt="hoodie" />
+    </div>
+  </main>
+</body>

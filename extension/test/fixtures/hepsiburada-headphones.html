@@ -1,0 +1,44 @@
+<!--
+  Realistic-enough Hepsiburada product page snippet for the yellow-headphones
+  fixture. Reflects Hepsiburada's tendency to use `data-test-id` attributes
+  for price elements and an ordered-list breadcrumb.
+-->
+<head>
+  <title>Kablosuz Kulaklık | Hepsiburada</title>
+  <meta property="og:title" content="Kablosuz Kulaklık" />
+  <meta property="og:image" content="https://cdn.hepsiburada.com/img/headphones.jpg" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Kablosuz Kulaklık",
+      "image": "https://cdn.hepsiburada.com/img/headphones.jpg",
+      "offers": {
+        "@type": "Offer",
+        "price": "1450.00",
+        "priceCurrency": "TRY"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.4",
+        "reviewCount": 312
+      }
+    }
+  </script>
+</head>
+<body>
+  <ol class="breadcrumb-list">
+    <li><a href="/">Anasayfa</a></li>
+    <li><a href="/elektronik">Elektronik</a></li>
+  </ol>
+  <main>
+    <h1 data-test-id="title">Kablosuz Kulaklık</h1>
+    <div class="prices">
+      <span data-test-id="price-prev-price">1.899,00 TL</span>
+      <span data-test-id="price-current-price">1.450,00 TL</span>
+    </div>
+    <span data-test-id="ratingScore">4.4</span>
+    <span data-test-id="reviewCount">312</span>
+    <img id="productImage" src="https://cdn.hepsiburada.com/img/headphones.jpg" alt="headphones" />
+  </main>
+</body>

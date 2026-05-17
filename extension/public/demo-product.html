@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Demo Ürün — Oversize Siyah Hoodie</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+        background: #f6f7fb;
+        color: #1c2230;
+      }
+      .topbar {
+        background: #fff;
+        border-bottom: 1px solid rgba(0,0,0,0.06);
+        padding: 14px 24px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        font-size: 14px;
+      }
+      .crumbs { color: #6b7280; }
+      .wrap { max-width: 1080px; margin: 32px auto; padding: 0 20px; }
+      .card {
+        background: #fff;
+        border-radius: 18px;
+        box-shadow: 0 10px 30px -10px rgba(15, 22, 41, 0.1);
+        padding: 28px;
+        display: grid;
+        grid-template-columns: 380px 1fr;
+        gap: 32px;
+      }
+      .photo {
+        aspect-ratio: 1/1;
+        background: linear-gradient(135deg, #eef0f6, #f7f8fc);
+        border: 1px solid rgba(0,0,0,0.05);
+        border-radius: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #9aa0ad;
+        font-size: 14px;
+      }
+      h1 { font-size: 26px; margin: 8px 0 12px; letter-spacing: -0.01em; }
+      .rating { color: #6b7280; font-size: 13px; margin-bottom: 12px; }
+      .stars { color: #f59e0b; letter-spacing: 1px; }
+      .price-was { color: #9aa0ad; text-decoration: line-through; font-size: 13px; }
+      .price-now { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; }
+      .badge {
+        display: inline-block;
+        margin-left: 8px;
+        background: #fee2e2;
+        color: #b91c1c;
+        font-size: 12px;
+        font-weight: 600;
+        padding: 3px 8px;
+        border-radius: 6px;
+        vertical-align: middle;
+      }
+      .delivery { color: #4b5563; font-size: 13px; margin: 14px 0 22px; }
+      .buy-row { display: flex; gap: 12px; align-items: center; }
+      .btn-buy {
+        background: linear-gradient(180deg, #fb7185, #f43f5e);
+        color: white;
+        border: 0;
+        height: 50px;
+        padding: 0 28px;
+        border-radius: 12px;
+        font-weight: 600;
+        font-size: 15px;
+        cursor: pointer;
+        box-shadow: 0 6px 20px -6px rgba(244, 63, 94, 0.5);
+      }
+      .btn-buy.secondary {
+        background: white;
+        color: #1c2230;
+        border: 1px solid rgba(0,0,0,0.1);
+        box-shadow: none;
+      }
+      .note {
+        background: #f9fafb;
+        border: 1px dashed rgba(0,0,0,0.08);
+        border-radius: 12px;
+        padding: 14px 16px;
+        font-size: 13px;
+        color: #4b5563;
+        margin-top: 28px;
+      }
+      .note strong { color: #1c2230; }
+      .reviews { margin-top: 36px; }
+      .reviews h2 { font-size: 18px; margin-bottom: 12px; }
+      .review-item {
+        background: white;
+        border: 1px solid rgba(0,0,0,0.05);
+        border-radius: 12px;
+        padding: 14px 16px;
+        margin-bottom: 8px;
+        font-size: 14px;
+      }
+      .review-stars { color: #f59e0b; margin-right: 8px; }
+      .review-date { color: #9aa0ad; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="topbar">
+      <span>Tartı — sentetik demo sayfası</span>
+      <span class="crumbs">Anasayfa / Giyim / Hoodie</span>
+    </div>
+
+    <div class="wrap">
+      <div
+        class="card"
+        data-kg-product
+        data-kg-title="Oversize Siyah Hoodie"
+        data-kg-price="990"
+        data-kg-original-price="1650"
+        data-kg-category="Giyim"
+        data-kg-rating="4.7"
+        data-kg-review-count="842"
+        data-kg-image="https://demo.local/img/hoodie.jpg"
+      >
+        <div class="photo">Ürün görseli (demo)</div>
+        <div>
+          <div style="color:#6b7280;font-size:11px;letter-spacing:0.06em;text-transform:uppercase">
+            Giyim · Üst
+          </div>
+          <h1>Oversize Siyah Hoodie</h1>
+          <div class="rating">
+            <span class="stars">★★★★★</span> 4.7 · 842 değerlendirme
+          </div>
+          <div>
+            <div class="price-was">₺1.650</div>
+            <div class="price-now">
+              ₺990 <span class="badge">%40 indirim</span>
+            </div>
+          </div>
+          <div class="delivery">Yarın kargoda — ücretsiz iade</div>
+          <div class="buy-row">
+            <button class="btn-buy" data-kg-buy>Sepete Ekle</button>
+            <button class="btn-buy secondary" data-kg-buy>Hemen Al</button>
+          </div>
+          <div class="note">
+            <strong>Demo:</strong> Eklenti yüklüyken bu butonlardan birine tıkla. Tıklama yakalanacak,
+            analiz paneli ~5 saniye boyunca çalışacak ve <em>kırmızı</em> kararı gösterecek.
+            Backend kapalı olsa bile fallback fixture devreye girer.
+          </div>
+        </div>
+      </div>
+
+      <section class="reviews">
+        <h2>Son Yorumlar</h2>
+        <div class="review-item" data-kg-review data-kg-rating="5">
+          <span class="review-stars">★★★★★</span>
+          <span data-kg-review-text>Çok güzel ürün hızlı kargo mükemmel kalite.</span>
+          <span class="review-date">2026-05-10</span>
+        </div>
+        <div class="review-item" data-kg-review data-kg-rating="5">
+          <span class="review-stars">★★★★★</span>
+          <span data-kg-review-text>Çok güzel ürün hızlı kargo kalite süper.</span>
+          <span class="review-date">2026-05-10</span>
+        </div>
+        <div class="review-item" data-kg-review data-kg-rating="5">
+          <span class="review-stars">★★★★★</span>
+          <span data-kg-review-text>Mükemmel kalite hızlı kargo tavsiye ederim.</span>
+          <span class="review-date">2026-05-11</span>
+        </div>
+        <div class="review-item" data-kg-review data-kg-rating="5">
+          <span class="review-stars">★★★★★</span>
+          <span data-kg-review-text>Çok güzel kalite hızlı kargo.</span>
+          <span class="review-date">2026-05-11</span>
+        </div>
+        <div class="review-item" data-kg-review data-kg-rating="2">
+          <span class="review-stars">★★</span>
+          <span data-kg-review-text>Beden uymadı, kumaş beklediğim gibi değildi.</span>
+          <span class="review-date">2026-04-15</span>
+        </div>
+      </section>
+    </div>
+  </body>
+</html>

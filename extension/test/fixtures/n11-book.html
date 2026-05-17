@@ -1,0 +1,48 @@
+<!--
+  Realistic-enough N11 product page snippet for the green-book fixture.
+  N11 wraps prices in <ins>/<del> pairs inside .newPrice/.oldPrice; the
+  product title uses `.proName`; breadcrumb is `.breadCrumb`.
+-->
+<head>
+  <title>Sapiens: Hayvanlardan Tanrılara | n11</title>
+  <meta property="og:title" content="Sapiens: Hayvanlardan Tanrılara" />
+  <meta property="og:image" content="https://cdn.n11.com/img/sapiens.jpg" />
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Product",
+      "name": "Sapiens: Hayvanlardan Tanrılara",
+      "image": "https://cdn.n11.com/img/sapiens.jpg",
+      "offers": {
+        "@type": "Offer",
+        "price": "145.00",
+        "priceCurrency": "TRY"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "reviewCount": 5230
+      }
+    }
+  </script>
+</head>
+<body>
+  <ul class="breadCrumb">
+    <li><a href="/">Anasayfa</a></li>
+    <li><a href="/kitap">Kitap</a></li>
+  </ul>
+  <main>
+    <h1 class="proName">Sapiens: Hayvanlardan Tanrılara</h1>
+    <div class="priceContainer">
+      <div class="oldPrice"><del>180,00 TL</del></div>
+      <div class="newPrice"><ins>145,00 TL</ins></div>
+    </div>
+    <div class="ratingCont">
+      <span class="ratingScore">4.8</span>
+    </div>
+    <span class="comment-count">5230</span>
+    <div class="unf-p-img">
+      <img src="https://cdn.n11.com/img/sapiens.jpg" alt="sapiens" />
+    </div>
+  </main>
+</body>

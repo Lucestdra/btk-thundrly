@@ -1,0 +1,28 @@
+# Build context lives at backend/. Anything that doesn't belong in the
+# runtime image is excluded here so Docker doesn't ship it to the
+# builder over the wire (faster `flyctl deploy`, smaller cache).
+
+# Local virtualenv + pytest cache
+.venv/
+.pytest_cache/
+**/__pycache__/
+**/*.pyc
+
+# Dev-only artifacts
+tests/
+scripts/
+
+# Local SQLite database (production uses Postgres via DATABASE_URL)
+app/data/observations.db
+app/data/*.db
+app/data/*.db-journal
+
+# Editor / OS noise
+.env
+.env.*
+*.swp
+.DS_Store
+
+# Docs and README — surface in the repo, not the image
+README.md
+*.md
