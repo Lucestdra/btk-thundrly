@@ -10,7 +10,7 @@ import { ImageResponse } from "next/og";
 
 export const runtime = "nodejs";
 export const alt =
-  "Tartı — Satın almadan önce 5 saniyelik akıllı kontrol";
+  "Thundrly — Satın almadan önce 5 saniyelik akıllı kontrol";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -58,7 +58,7 @@ export default function Image() {
             T
           </div>
           <div style={{ fontSize: "44px", fontWeight: 500, color: "#003249" }}>
-            Tartı
+            Thundrly
           </div>
         </div>
 

@@ -1,4 +1,4 @@
-# Tartı — Project TODO
+# Thundrly — Project TODO
 
 [![CI](https://github.com/OWNER/REPO/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/REPO/actions/workflows/ci.yml)
 
@@ -48,7 +48,7 @@
 ### Landing (Next.js 15)
 - [x] All sections: Hero, Problem, Solution, AgentSystem, LiveDemo, WhyUnique, Audience, VerdictShowcase, FinalCTA, Footer
 - [x] **Streaming live demo** — `LiveDemoSection` consumes NDJSON via [`streamAnalyze.ts`](landing/lib/streamAnalyze.ts), falls back to simulator
-- [x] Preloader, "Tartı" branding, cool-blue palette, verdict colors
+- [x] Preloader, "Thundrly" branding, cool-blue palette, verdict colors
 - [x] **Favicon + Apple-touch icon** from generated PNGs
 - [x] **OpenGraph + Twitter card image** rendered via `next/og` (`app/opengraph-image.tsx`)
 - [x] **Full SEO metadata** — title template, canonical, keywords, robots, OG + Twitter
@@ -70,7 +70,7 @@
 
 - [x] **CI workflow (GitHub Actions)** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs four jobs on every push/PR: `backend` (pytest), `extension` (vitest + build), `landing` (vitest + typecheck), and `schema-drift` (regenerates openapi.json + TS types, fails on `git diff --exit-code`). Schema drift gate locally verified — fake field injection caught, restoration green.
 - [ ] **Deploy backend** — Fly.io or Railway with managed Postgres, `DATABASE_URL` + `GEMINI_API_KEY` env vars, structured logs (`LOG_FORMAT=json`), `/api/ready` health probe. ~3 hours.
-- [ ] **Deploy landing** — Vercel, point `NEXT_PUBLIC_TARTI_API_BASE` + `NEXT_PUBLIC_SITE_URL` at prod. ~30 min.
+- [ ] **Deploy landing** — Vercel, point `NEXT_PUBLIC_THUNDRLY_API_BASE` + `NEXT_PUBLIC_SITE_URL` at prod. ~30 min.
 - [ ] **Chrome Web Store submission** — privacy policy + screenshots + 128px tile icon + listing copy. ~1 day with policy assets.
 
 ---

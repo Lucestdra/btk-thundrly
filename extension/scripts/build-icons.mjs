@@ -1,5 +1,5 @@
 /**
- * Generate Tartı extension icons in 16/48/128 px PNGs.
+ * Generate Thundrly extension icons in 16/48/128 px PNGs.
  *
  * Design — solid cerulean (#007ea7) rounded square with a centered
  * deep-space-blue "T" mark, mirroring the brand wordmark. Pure-JS via

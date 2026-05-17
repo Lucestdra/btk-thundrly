@@ -31,7 +31,7 @@ export function ExtensionPanelMock({
         <div className="flex items-center gap-2.5">
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-ink" />
           <div>
-            <div className="kicker">Tartı</div>
+            <div className="kicker">Thundrly</div>
             <div className="text-[13px] text-ink mt-0.5">5 saniyelik kontrol</div>
           </div>
         </div>

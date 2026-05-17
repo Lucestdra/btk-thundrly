@@ -41,7 +41,7 @@ export function WhyUniqueSection() {
             Parçalı çözümleri <span className="italic">tek ekranda birleştirir</span>.
           </motion.h2>
           <motion.p variants={fadeUp} className="mt-6 lead max-w-2xl">
-            Mevcut araçlar tek bir sorunu çözmeye çalışıyor. Tartı altı boyutu birden
+            Mevcut araçlar tek bir sorunu çözmeye çalışıyor. Thundrly altı boyutu birden
             değerlendirip Türk e-ticaret alışkanlıklarına göre tasarlanmıştır.
           </motion.p>
         </motion.div>
@@ -59,7 +59,7 @@ export function WhyUniqueSection() {
                 <th className="text-left py-5 pr-6 kicker">Boyut</th>
                 <th className="py-5 px-4 kicker text-center font-medium">Fiyat takipçileri</th>
                 <th className="py-5 px-4 kicker text-center font-medium">Yorum araçları</th>
-                <th className="py-5 px-4 kicker text-center font-medium text-ink">Tartı</th>
+                <th className="py-5 px-4 kicker text-center font-medium text-ink">Thundrly</th>
               </tr>
             </thead>
             <tbody>

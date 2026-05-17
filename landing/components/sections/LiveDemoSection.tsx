@@ -128,7 +128,7 @@ export function LiveDemoSection() {
       if (ctrl.signal.aborted) return;
       // Backend not running or stream errored — fall back to the synthetic
       // simulator + canned response so the marketing page still demos cleanly.
-      console.warn("[Tartı] streaming başarısız, sentetik simülatör çalışıyor:", err);
+      console.warn("[Thundrly] streaming başarısız, sentetik simülatör çalışıyor:", err);
       try {
         await runDemo({
           onUpdate: setStages,

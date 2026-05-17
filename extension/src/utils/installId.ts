@@ -10,7 +10,7 @@
  * tests, landing page) so callers don't need to special-case test envs.
  */
 
-const STORAGE_KEY = "tarti:installId";
+const STORAGE_KEY = "thundrly:installId";
 
 function _randomId(): string {
   // Prefer crypto.randomUUID where available (Chrome 92+, all MV3 envs).

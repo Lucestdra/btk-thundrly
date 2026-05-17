@@ -27,8 +27,8 @@ const MOUSEDOWN_TIMESTAMPS = new WeakMap<HTMLElement, number>();
 import type { SessionContext } from "@shared/types";
 import { onUrlChange } from "./urlWatcher";
 
-const PURCHASES_KEY = "tarti:purchases";
-const SEEN_URLS_KEY = "tarti:seen-urls";
+const PURCHASES_KEY = "thundrly:purchases";
+const SEEN_URLS_KEY = "thundrly:seen-urls";
 const SEEN_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
 // SPA navigation resets the page-view timer.

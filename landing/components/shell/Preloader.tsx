@@ -29,7 +29,7 @@ export function Preloader() {
             transition={{ delay: 0.65, duration: 0.4 }}
             className="mt-6 font-display text-2xl font-normal tracking-tight text-ink"
           >
-            Tartı
+            Thundrly
           </motion.div>
           <motion.div
             initial={{ opacity: 0, scaleX: 0 }}

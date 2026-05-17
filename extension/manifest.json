@@ -1,11 +1,11 @@
 {
   "manifest_version": 3,
-  "name": "Tartı",
-  "short_name": "Tartı",
+  "name": "Thundrly",
+  "short_name": "Thundrly",
   "version": "0.1.0",
   "description": "Satın almadan önce 5 saniyelik akıllı kontrol — Türk e-ticaret için AI alışveriş asistanı.",
   "action": {
-    "default_title": "Tartı",
+    "default_title": "Thundrly",
     "default_icon": {
       "16": "public/icons/icon-16.png",
       "32": "public/icons/icon-32.png",
@@ -47,6 +47,7 @@
     }
   ],
   "host_permissions": [
+    "https://api.thundrly.com/*",
     "http://127.0.0.1:8000/*",
     "http://localhost:8000/*",
     "https://*.trendyol.com/*",

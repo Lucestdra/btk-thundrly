@@ -18,19 +18,19 @@ const display = Fraunces({
 });
 
 const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://tarti.local";
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://thundrly.com";
 
 export const metadata: Metadata = {
   title: {
-    default: "Tartı — Satın almadan önce 5 saniyelik akıllı kontrol",
-    template: "%s · Tartı",
+    default: "Thundrly — Satın almadan önce 5 saniyelik akıllı kontrol",
+    template: "%s · Thundrly",
   },
   description:
     "Yorumları, fiyat geçmişini, bütçeni ve dürtüsel alışveriş riskini analiz ederek yeşil, sarı veya kırmızı bir karar veren Türk e-ticaret için AI alışveriş asistanı.",
   metadataBase: new URL(SITE_URL),
   alternates: { canonical: "/" },
   keywords: [
-    "Tartı",
+    "Thundrly",
     "akıllı alışveriş",
     "fiyat takip",
     "sahte indirim",
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
     "AI alışveriş asistanı",
     "Chrome eklentisi",
   ],
-  authors: [{ name: "Tartı" }],
+  authors: [{ name: "Thundrly" }],
   category: "shopping",
   robots: {
     index: true,
@@ -55,17 +55,17 @@ export const metadata: Metadata = {
     },
   },
   openGraph: {
-    title: "Tartı — Satın almadan önce 5 saniyelik akıllı kontrol",
+    title: "Thundrly — Satın almadan önce 5 saniyelik akıllı kontrol",
     description:
       "Sahte indirimleri, manipüle yorumları ve bütçe aşımını tek ekranda yakala.",
     url: SITE_URL,
-    siteName: "Tartı",
+    siteName: "Thundrly",
     locale: "tr_TR",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "Tartı",
+    title: "Thundrly",
     description:
       "Satın almadan önce 5 saniyelik akıllı kontrol — Türk e-ticaret için AI alışveriş asistanı.",
   },

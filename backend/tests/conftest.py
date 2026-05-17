@@ -15,7 +15,7 @@ import tempfile
 from pathlib import Path
 
 # --- DATABASE_URL override (must precede app imports) ---
-_TMPDIR = Path(tempfile.mkdtemp(prefix="tarti-test-"))
+_TMPDIR = Path(tempfile.mkdtemp(prefix="thundrly-test-"))
 _TEST_DB = _TMPDIR / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB.as_posix()}"
 

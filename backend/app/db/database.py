@@ -3,7 +3,7 @@
 Reads `DATABASE_URL` from the environment. Defaults to a file-based SQLite
 at `app/data/observations.db` so local dev needs zero setup. Postgres example:
 
-    DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/tarti
+    DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/thundrly
 """
 
 from __future__ import annotations

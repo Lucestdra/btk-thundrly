@@ -12,8 +12,8 @@
  * functions are only wrapped once.
  */
 
-const NAV_EVENT = "tarti:navigation";
-const INSTALLED_FLAG = "__tartiUrlWatcherInstalled__";
+const NAV_EVENT = "thundrly:navigation";
+const INSTALLED_FLAG = "__thundrlyUrlWatcherInstalled__";
 
 let currentUrl = location.href;
 

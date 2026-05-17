@@ -71,10 +71,10 @@ function attachToButton(btn: HTMLElement) {
             setTimeout(() => btn.click(), 0);
           },
           onPause: () => {
-            console.log("[Tartı] kullanıcı 30 saniye düşünmeyi seçti.");
+            console.log("[Thundrly] kullanıcı 30 saniye düşünmeyi seçti.");
           },
           onClose: () => {
-            console.log("[Tartı] panel kapatıldı.");
+            console.log("[Thundrly] panel kapatıldı.");
           },
         });
       })();
@@ -118,7 +118,7 @@ function sendObservationIfNew() {
   observedUrlsThisSession.add(url);
   chrome.runtime
     .sendMessage({ type: "priceObservation", payload })
-    .catch((e) => console.warn("[Tartı] price observation gönderilemedi:", e));
+    .catch((e) => console.warn("[Thundrly] price observation gönderilemedi:", e));
 }
 
 function scheduleObservation() {
@@ -134,9 +134,9 @@ sendObservationIfNew();
 
 // SPA navigasyonlarında: yeni ürün URL'si için yeniden gönder.
 onUrlChange((to, from) => {
-  console.log(`[Tartı] SPA navigation: ${from} → ${to}`);
+  console.log(`[Thundrly] SPA navigation: ${from} → ${to}`);
   scheduleObservation();
 });
 
 // Debug: konsola bir kez sinyal yaz.
-console.log(`[Tartı] content script aktif — host: ${host}`);
+console.log(`[Thundrly] content script aktif — host: ${host}`);

@@ -14,10 +14,7 @@
  */
 
 import type { AnalyzeRequest, AnalyzeResponse } from "@shared/types/analysis";
-
-const ANALYZE_URL = "http://127.0.0.1:8000/api/analyze-purchase";
-const ANALYZE_STREAM_URL = "http://127.0.0.1:8000/api/analyze-purchase/stream";
-const OBSERVATION_URL = "http://127.0.0.1:8000/api/price-observation";
+import { ANALYZE_STREAM_URL, ANALYZE_URL, OBSERVATION_URL } from "@/config";
 
 type AnalyzeMessage = { type: "analyze"; payload: AnalyzeRequest };
 type ObservationMessage = {
@@ -141,5 +138,5 @@ function isStartMessage(msg: unknown): msg is { type: "start"; payload: AnalyzeR
 }
 
 chrome.runtime.onInstalled.addListener(() => {
-  console.log("[Tartı] eklenti yüklendi.");
+  console.log("[Thundrly] eklenti yüklendi.");
 });

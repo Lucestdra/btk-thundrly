@@ -24,8 +24,8 @@ from typing import Any
 from fastapi import FastAPI, Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 
-_LOGGER = logging.getLogger("tarti")
-_REQUEST_LOGGER = logging.getLogger("tarti.request")
+_LOGGER = logging.getLogger("thundrly")
+_REQUEST_LOGGER = logging.getLogger("thundrly.request")
 
 
 class _JsonFormatter(logging.Formatter):

@@ -197,7 +197,7 @@ def put_user_budget(
     ),
 )
 def health() -> dict:
-    return {"status": "ok", "service": "tarti-backend"}
+    return {"status": "ok", "service": "thundrly-backend"}
 
 
 @router.get(
@@ -213,4 +213,4 @@ def ready(db: Session = Depends(get_db)) -> dict:
     from sqlalchemy import text
 
     db.execute(text("SELECT 1"))
-    return {"status": "ok", "service": "tarti-backend", "db": "reachable"}
+    return {"status": "ok", "service": "thundrly-backend", "db": "reachable"}

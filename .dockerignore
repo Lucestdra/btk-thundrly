@@ -1,0 +1,49 @@
+# Repo-root .dockerignore — applies when build context is `.`
+# (currently: the landing image). The backend image uses its own context
+# at `./backend` and has its own `.dockerignore` there.
+
+# VCS / CI / editor noise
+.git/
+.github/
+.vscode/
+.idea/
+.claude/
+.DS_Store
+Thumbs.db
+
+# Other services that don't belong in the landing image
+backend/
+extension/
+docs/
+
+# Local build outputs / caches
+**/node_modules/
+**/.next/
+**/dist/
+**/.venv/
+**/.pytest_cache/
+**/.vitest-cache/
+**/.vite/
+**/.turbo/
+**/__pycache__/
+**/*.pyc
+**/*.tsbuildinfo
+**/.eslintcache
+
+# Local DBs (production uses Postgres)
+**/*.db
+**/*.sqlite*
+
+# Local env / secrets
+.env
+**/.env
+**/.env.local
+**/.env.*.local
+
+# Top-level docs that don't need to ship into the image
+README.md
+DEPLOY.md
+TODO.md
+LICENSE
+*.zip
+*.tar.gz

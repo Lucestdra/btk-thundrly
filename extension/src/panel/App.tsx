@@ -158,12 +158,12 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
   const tone = useMemo(() => (result ? decisionToneClass[result.decision] : "red"), [result]);
 
   return (
-    <div className="kg-panel" role="dialog" aria-live="polite" aria-label="Tartı analiz paneli">
+    <div className="kg-panel" role="dialog" aria-live="polite" aria-label="Thundrly analiz paneli">
       <div className="kg-header">
         <div className="kg-brand">
           <div className="kg-logo">T</div>
           <div className="kg-brand-text">
-            <small>Tartı</small>
+            <small>Thundrly</small>
             <strong>5 saniyelik kontrol</strong>
           </div>
         </div>

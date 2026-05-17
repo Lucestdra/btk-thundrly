@@ -37,10 +37,10 @@ export async function analyzePurchase(req: AnalyzeRequest): Promise<AnalyzeRespo
     if (resp && resp.ok) {
       return resp.data;
     }
-    console.warn("[Tartı] backend yanıtı yok, fallback fixture kullanılıyor:", resp);
+    console.warn("[Thundrly] backend yanıtı yok, fallback fixture kullanılıyor:", resp);
     return redHoodieResponse;
   } catch (e) {
-    console.warn("[Tartı] backend istisnası, fallback fixture:", e);
+    console.warn("[Thundrly] backend istisnası, fallback fixture:", e);
     return redHoodieResponse;
   }
 }
@@ -121,7 +121,7 @@ export async function analyzePurchaseWithProgress(
     const response = await analyzePurchaseStream(req, onEvent);
     return { response, streamed: true };
   } catch (e) {
-    console.warn("[Tartı] streaming başarısız, tek seferlik fetch'e dönülüyor:", e);
+    console.warn("[Thundrly] streaming başarısız, tek seferlik fetch'e dönülüyor:", e);
     const response = await analyzePurchase(req);
     return { response, streamed: false };
   }

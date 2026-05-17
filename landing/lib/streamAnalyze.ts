@@ -31,7 +31,7 @@ const DEFAULT_API_BASE = "http://localhost:8000";
 function apiBase(): string {
   // `NEXT_PUBLIC_*` env vars are inlined at build time so they work in the
   // browser. Falls back to localhost for the standard dev setup.
-  const fromEnv = process.env.NEXT_PUBLIC_TARTI_API_BASE;
+  const fromEnv = process.env.NEXT_PUBLIC_THUNDRLY_API_BASE;
   return (fromEnv && fromEnv.trim()) || DEFAULT_API_BASE;
 }
 

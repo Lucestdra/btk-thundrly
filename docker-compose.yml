@@ -1,0 +1,76 @@
+# Thundrly production stack: postgres + backend + landing.
+#
+# Nginx (host-installed, not in this compose) terminates TLS for
+# thundrly.com / api.thundrly.com and reverse-proxies to:
+#   - landing container at 127.0.0.1:3000
+#   - backend container at 127.0.0.1:8000
+#
+# Both services bind to localhost only, so the public attack surface is
+# just whatever nginx exposes. Postgres has no public port at all — only
+# the backend container reaches it over the internal compose network.
+#
+# Start: `docker compose up -d --build`
+# Update: `git pull && docker compose up -d --build`
+# Logs: `docker compose logs -f --tail=200 backend`
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: thundrly-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: thundrly
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD env var required}
+      POSTGRES_DB: thundrly
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U thundrly -d thundrly"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: thundrly-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://thundrly:${POSTGRES_PASSWORD}@postgres:5432/thundrly
+      LOG_FORMAT: json
+      ALLOWED_ORIGINS: https://thundrly.com,https://www.thundrly.com
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      GEMINI_CACHE_TTL_SECONDS: ${GEMINI_CACHE_TTL_SECONDS:-900}
+    # Bind to host loopback only — nginx on the host reverse-proxies.
+    ports:
+      - "127.0.0.1:8000:8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8000/api/ready\", timeout=3).status == 200 else 1)'"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  landing:
+    build:
+      context: .
+      dockerfile: landing/Dockerfile
+      args:
+        NEXT_PUBLIC_THUNDRLY_API_BASE: https://api.thundrly.com
+        NEXT_PUBLIC_SITE_URL: https://thundrly.com
+    container_name: thundrly-landing
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "127.0.0.1:3000:3000"
+
+volumes:
+  postgres-data:
+    name: thundrly-postgres-data

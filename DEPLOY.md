@@ -1,208 +1,307 @@
-# Tartı — Deployment
+# Thundrly — Deployment (Ubuntu 24.04 + Docker + Nginx)
 
-Three services, three platforms. Backend on Fly.io, landing on Vercel,
-extension on the Chrome Web Store. Each section is self-contained; you
-can deploy in any order, but the landing needs the backend's public URL
-to be useful, and the extension's `host_permissions` need that URL too.
+Single-server deployment. Docker Compose runs Postgres + backend + landing
+on the loopback interface; host-installed Nginx terminates TLS and
+reverse-proxies. Domain: `thundrly.com` (landing) + `api.thundrly.com`
+(backend).
 
-| Service | Platform | Cost |
-|---|---|---|
-| Backend (FastAPI) | Fly.io | Free for 1 machine, scale-to-zero |
-| Postgres | Neon | Free tier (0.5 GB) |
-| Landing (Next.js) | Vercel | Free hobby tier |
-| Extension | Chrome Web Store | $5 one-time developer fee |
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Ubuntu 24.04 server (your VPS)                             │
+│                                                             │
+│   nginx :443 ──┬─→ thundrly.com         → 127.0.0.1:3000 ──┐│
+│                │                          (landing container)│
+│                │                                            │
+│                └─→ api.thundrly.com     → 127.0.0.1:8000 ──┐│
+│                                            (backend container)│
+│                                                  │          │
+│   docker compose network ────────────── postgres :5432    ──┘│
+└─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
-## 1. Backend → Fly.io + Neon
+## 1. One-time server bootstrap
 
-### Prereqs
-
-- [`flyctl`](https://fly.io/docs/flyctl/install/) installed and `flyctl auth login` done
-- A free [Neon](https://neon.tech) account
-
-### 1a. Provision Postgres on Neon
-
-1. Sign in to Neon, create a project `tarti-prod`
-2. Copy the connection string — looks like `postgresql://USER:PASS@HOST/DB?sslmode=require`
-3. SQLAlchemy's psycopg2 dialect needs the `+psycopg2` prefix. Final shape:
-
-```
-postgresql+psycopg2://USER:PASS@HOST/DB?sslmode=require
-```
-
-Save this value — you'll set it as `DATABASE_URL` below.
-
-### 1b. Launch the Fly app
-
-From the repo root:
+### 1a. SSH in + base packages
 
 ```bash
-cd backend
-flyctl launch --no-deploy --name tarti-backend --region fra
+ssh user@your-server
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y git nginx ufw certbot python3-certbot-nginx
 ```
 
-`--no-deploy` lets us set secrets first. The wizard reads
-[`backend/fly.toml`](backend/fly.toml) — accept its defaults.
-
-### 1c. Set secrets
+### 1b. Install Docker + Compose (official repo)
 
 ```bash
-flyctl secrets set \
-  DATABASE_URL='postgresql+psycopg2://USER:PASS@HOST/DB?sslmode=require' \
-  GEMINI_API_KEY='AIzaSy...your_key...' \
-  ALLOWED_ORIGINS='https://tarti.app,https://www.tarti.app'
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+  sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt update
+sudo apt install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+
+# Allow running docker without sudo for your user (re-login after).
+sudo usermod -aG docker $USER
 ```
 
-| Secret | Required | Notes |
-|---|---|---|
-| `DATABASE_URL` | ✅ | Postgres connection string (Neon or otherwise). Without it the app falls back to SQLite, which doesn't survive Fly machine restarts. |
-| `GEMINI_API_KEY` | optional | Without it, agents use the deterministic fallback path. Quality drop but service still works. |
-| `ALLOWED_ORIGINS` | ✅ | Comma-separated list of frontend origins. The `chrome-extension://*` regex is always allowed. |
-| `GEMINI_MODEL` | optional | Defaults to `gemini-1.5-flash`. |
-| `GEMINI_CACHE_TTL_SECONDS` | optional | Defaults to 900 (15 min). |
-
-### 1d. Deploy
+### 1c. Firewall
 
 ```bash
-flyctl deploy
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx Full'   # opens 80 + 443
+sudo ufw enable
 ```
 
-First deploy takes 2-3 minutes (image build + machine create + healthcheck wait). The lifespan runs Alembic migrations against Neon on the first machine to boot — subsequent deploys just upgrade if there are new revisions.
+Postgres (5432) and the app ports (3000, 8000) stay closed — they bind
+to `127.0.0.1` only, so Nginx on the host is the only thing that can
+reach them.
 
-### 1e. Verify
+### 1d. DNS
 
-```bash
-flyctl status                            # machine should be "started"
-curl https://tarti-backend.fly.dev/api/ready    # → {"status":"ok","db":"reachable"}
-flyctl logs                              # tail structured JSON logs
+Point both records at your server's public IP:
+
+```
+thundrly.com.       A   <YOUR_IP>
+www.thundrly.com.   A   <YOUR_IP>
+api.thundrly.com.   A   <YOUR_IP>
 ```
 
-In Fly's logs UI you'll see per-request entries like:
-
-```json
-{"ts":"2026-05-17T...","level":"INFO","logger":"tarti.request",
- "msg":"POST /api/analyze-purchase -> 200",
- "request_id":"...","method":"POST","path":"/api/analyze-purchase",
- "status":200,"duration_ms":42.1,"remote":"..."}
-```
-
-### 1f. Operational notes
-
-- **Scale-to-zero:** [`fly.toml`](backend/fly.toml) sets `min_machines_running = 0`. First request after idle takes ~1-2s cold start. Set to 1 (and accept the $2/mo cost) for a warm process.
-- **Readiness probe:** `/api/ready` runs `SELECT 1`, so a Neon hiccup fails fast and Fly routes traffic away.
-- **Custom domain:** `flyctl certs add api.tarti.app` after pointing DNS A/AAAA records at Fly. Then update `ALLOWED_ORIGINS` to include `https://tarti.app` and `https://www.tarti.app`.
+Wait for `dig +short thundrly.com api.thundrly.com` to return the right
+IP before continuing (5-30 min depending on registrar).
 
 ---
 
-## 2. Landing → Vercel
+## 2. Pull + configure the project
 
-### 2a. Connect the repo
+```bash
+sudo mkdir -p /srv && sudo chown $USER:$USER /srv
+cd /srv
+git clone https://github.com/Lucestdra/btk-tarti.git thundrly
+cd thundrly
+```
 
-1. Visit https://vercel.com/new
-2. Import the GitHub repo
-3. Set **Root Directory** = `landing/`
-4. Framework preset: Next.js (auto-detected)
+### 2a. Create the production `.env`
 
-### 2b. Environment variables
+```bash
+cp .env.example .env
+# Generate a strong Postgres password
+echo "POSTGRES_PASSWORD=$(openssl rand -hex 24)" >> .env
+# Optional — Gemini key for the richer LLM-narrated verdicts
+echo "GEMINI_API_KEY=AIzaSy..." >> .env
+nano .env   # clean up any duplicate lines from the appends above
+```
 
-In the Vercel project Settings → Environment Variables, add:
-
-| Variable | Value | Notes |
-|---|---|---|
-| `NEXT_PUBLIC_TARTI_API_BASE` | `https://tarti-backend.fly.dev` | URL from step 1d. Used by [`streamAnalyze.ts`](landing/lib/streamAnalyze.ts). |
-| `NEXT_PUBLIC_SITE_URL` | `https://tarti.app` | Used by [`opengraph-image.tsx`](landing/app/opengraph-image.tsx), `robots.ts`, `sitemap.ts`. |
-
-Both have the `NEXT_PUBLIC_` prefix so Next inlines them at build time.
-
-### 2c. Deploy
-
-Vercel auto-deploys on every push to `main`. First deploy builds + serves at `https://<project>.vercel.app`. Add a custom domain (e.g. `tarti.app`) in the project Settings → Domains; DNS is one A record (`76.76.21.21`).
-
-### 2d. Verify
-
-- Visit `https://tarti.app/` → Hero loads, preloader fades out
-- Click **Analizi Başlat** → NDJSON request to `tarti-backend.fly.dev`, panel shows real verdict (not fallback fixture)
-- View `https://tarti.app/opengraph-image` → see the rendered 1200×630 OG image
-- View `https://tarti.app/robots.txt` and `/sitemap.xml`
+`.env` is gitignored — never commit it.
 
 ---
 
-## 3. Extension → Chrome Web Store
+## 3. Build + launch the stack
 
-### 3a. Update production endpoints
-
-In [`extension/src/background.ts`](extension/src/background.ts), point the three URLs at the deployed backend:
-
-```ts
-const ANALYZE_URL = "https://tarti-backend.fly.dev/api/analyze-purchase";
-const ANALYZE_STREAM_URL = "https://tarti-backend.fly.dev/api/analyze-purchase/stream";
-const OBSERVATION_URL = "https://tarti-backend.fly.dev/api/price-observation";
+```bash
+cd /srv/thundrly
+docker compose up -d --build
 ```
 
-Add the production host to [`extension/manifest.json`](extension/manifest.json) `host_permissions`:
+First build takes 3-5 min (downloads Python + Node + Postgres base images,
+runs pip install + npm ci + next build). Watch logs:
 
-```json
-"host_permissions": [
-  "https://tarti-backend.fly.dev/*",
-  "http://127.0.0.1:8000/*",
-  "https://*.trendyol.com/*",
-  ...
-]
+```bash
+docker compose logs -f --tail=50
 ```
 
-(Keep the localhost entries for dev parity.)
+Wait for these signals before moving on:
 
-### 3b. Build the production zip
+- `thundrly-postgres ... database system is ready to accept connections`
+- `thundrly-backend ... INFO ... Uvicorn running on http://0.0.0.0:8000`
+- `thundrly-landing ... ✓ Ready in 1234ms`
+
+### 3a. Sanity-check from the host
+
+```bash
+curl http://127.0.0.1:8000/api/ready
+# {"status":"ok","service":"thundrly-backend","db":"reachable"}
+
+curl -I http://127.0.0.1:3000/
+# HTTP/1.1 200 OK   …  X-Powered-By: Next.js
+```
+
+---
+
+## 4. Nginx + TLS
+
+### 4a. Drop in the vhost configs
+
+```bash
+sudo cp /srv/thundrly/deploy/nginx/api.thundrly.com.conf  /etc/nginx/sites-available/
+sudo cp /srv/thundrly/deploy/nginx/thundrly.com.conf      /etc/nginx/sites-available/
+
+sudo ln -s /etc/nginx/sites-available/api.thundrly.com.conf /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/thundrly.com.conf     /etc/nginx/sites-enabled/
+
+sudo rm -f /etc/nginx/sites-enabled/default
+
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+At this point HTTP works (port 80 only). HTTPS lines in the configs are
+commented out — certbot fills them in.
+
+### 4b. Issue Let's Encrypt certificates
+
+```bash
+sudo certbot --nginx \
+  -d thundrly.com -d www.thundrly.com \
+  -d api.thundrly.com \
+  --redirect \
+  --agree-tos -m you@thundrly.com
+```
+
+Certbot edits the vhost files in-place, adds `ssl_certificate` /
+`ssl_certificate_key` lines, and inserts the HTTPS server blocks. It
+schedules its own renewal via `systemd.timer` — no cron entry needed.
+
+Verify auto-renewal:
+
+```bash
+sudo systemctl status certbot.timer
+sudo certbot renew --dry-run
+```
+
+### 4c. Final smoke test
+
+```bash
+curl https://api.thundrly.com/api/ready
+# {"status":"ok","service":"thundrly-backend","db":"reachable"}
+
+curl -I https://thundrly.com/
+# HTTP/2 200
+
+# Streaming endpoint sanity — should print 5 NDJSON lines without buffering
+curl -N -X POST https://api.thundrly.com/api/analyze-purchase/stream \
+  -H 'content-type: application/json' \
+  --data-binary @- <<'JSON'
+{"userId":"deploy-smoketest","platform":"trendyol","product":{"title":"x","price":100,"currency":"TRY","category":"Test","url":"https://x/p"},"reviews":[],"priceHistory":[],"session":{"timeOnPageSeconds":1,"clickSpeedMs":1,"currentHour":12,"purchasesToday":0}}
+JSON
+```
+
+Open the landing in a browser: <https://thundrly.com/>. Click
+**Analizi Başlat** — the NDJSON request should hit
+`api.thundrly.com/api/analyze-purchase/stream` (Network tab confirms),
+and the panel renders the real verdict (not the fallback fixture).
+
+---
+
+## 5. Day-to-day operations
+
+### Update + redeploy
+
+```bash
+cd /srv/thundrly
+git pull
+docker compose up -d --build
+```
+
+Migrations run automatically on backend startup (see
+`backend/app/db/migrations.py`). New Alembic revisions just apply.
+
+### Tail logs
+
+```bash
+docker compose logs -f --tail=200 backend    # JSON-structured request logs
+docker compose logs -f --tail=200 landing
+```
+
+### Restart a single service
+
+```bash
+docker compose restart backend
+```
+
+### Postgres shell
+
+```bash
+docker compose exec postgres psql -U thundrly thundrly
+```
+
+### Backup the database
+
+```bash
+docker compose exec -T postgres pg_dump -U thundrly thundrly | \
+  gzip > /srv/thundrly/backups/$(date +%Y%m%d).sql.gz
+```
+
+Add to cron or `systemd.timer` for daily backups.
+
+---
+
+## 6. Update the extension
+
+The extension's [`src/config.ts`](extension/src/config.ts) already swaps
+`http://127.0.0.1:8000` → `https://api.thundrly.com` based on
+`import.meta.env.PROD`, so:
 
 ```bash
 cd extension
 npm ci
-npm run build
-cd dist && zip -r ../tarti-extension-v0.1.0.zip .
+npm run build         # produces extension/dist with production URLs baked in
+cd dist && zip -r ../thundrly-extension-v0.1.0.zip .
 ```
 
-### 3c. Submit
+Upload the resulting zip to the Chrome Web Store dashboard. Once
+published, users get auto-updates pushed to their browsers.
 
-1. Pay the $5 [Chrome Web Store developer fee](https://chrome.google.com/webstore/devconsole) (one-time, per account)
-2. Click **New Item**, upload `tarti-extension-v0.1.0.zip`
-3. Fill in store-listing fields:
-   - **Title:** Tartı
-   - **Description:** Satın almadan önce 5 saniyelik akıllı kontrol. Yorum güvenilirliği, sahte indirim ve bütçe aşımını tek karar rengiyle gösterir.
-   - **Screenshots:** 5 images at 1280×800 — panel running on the demo page, on Trendyol, with green/yellow/red verdicts
-   - **Category:** Shopping
-   - **Privacy practices:** Declare what data you collect (we observe product URLs + prices — declare this)
-4. Provide a **Privacy Policy URL** (Chrome requires one; host on `tarti.app/privacy` or a Gist)
-5. Submit for review — turnaround is usually 1-3 days
-
-### 3d. Privacy policy minimum content
-
-Cover:
-- Product URL + price observations sent to `tarti-backend.fly.dev` (anonymous, for crowdsource history)
-- Anonymous installId stored in `chrome.storage.local`
-- No PII, no tracking pixels, no analytics
-- Data retention: append-only DB, contact email for deletion requests
+For local dev (extension calling local backend) the same `npm run dev`
+flow works — `import.meta.env.PROD === false` selects the localhost URLs.
 
 ---
 
 ## Troubleshooting
 
-### Backend health endpoint returns 503
+### `docker compose up` fails to start backend
 
-`/api/ready` is failing — usually means the DB connection is broken. Check:
+```bash
+docker compose logs backend
+```
 
-- `flyctl secrets list` confirms `DATABASE_URL` is set
-- Connection string includes `+psycopg2` after `postgresql`
-- Neon hasn't suspended the project (free tier auto-suspends after inactivity; first request wakes it but might time out)
+Common cause: `DATABASE_URL` malformed, or Postgres hasn't finished
+starting. Compose waits on `postgres.condition: service_healthy`, but
+the first boot can take 10-15s longer than the healthcheck's
+`start_period`. Just run `docker compose up -d` again.
 
-### `flyctl deploy` fails on healthcheck
+### Nginx returns 502 Bad Gateway
 
-Migrations may be taking longer than the 20s grace period. Bump `grace_period` in [`backend/fly.toml`](backend/fly.toml) to `60s` and redeploy.
+The proxy can't reach the container. Check:
 
-### Landing demo always shows fallback fixture
+```bash
+sudo ss -tlnp | grep -E '3000|8000'
+# Should show TWO lines, both bound to 127.0.0.1
+```
 
-The browser's CORS check is failing. Look in the page console for the actual error. Most common cause: `ALLOWED_ORIGINS` on the backend doesn't include the deployed landing URL.
+If the ports aren't bound, `docker compose ps` will show the service as
+"unhealthy" or "exited" — check its logs.
 
-### Extension can't reach backend
+### Streaming endpoint returns 200 but panel sees no events
 
-`host_permissions` in `manifest.json` must include the production backend URL. Reload the extension in `chrome://extensions` after changing manifest.
+Nginx is buffering. Confirm the config has `proxy_buffering off;` in the
+`api.thundrly.com` vhost. Reload nginx after any config change:
+`sudo nginx -t && sudo systemctl reload nginx`.
+
+### Free-tier disk filling up with Docker images
+
+```bash
+docker system prune -af --volumes        # drops unused images + volumes
+docker compose down && docker compose up -d --build
+```
+
+Postgres data is in the named volume `thundrly-postgres-data` which
+`prune --volumes` does NOT remove unless it's truly orphaned (the
+compose service still references it).
+
+### CORS errors in browser
+
+Backend's `ALLOWED_ORIGINS` (set in `docker-compose.yml`) must include
+the deployed landing origin. After changing, `docker compose up -d`
+restarts only the backend container.

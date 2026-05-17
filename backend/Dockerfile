@@ -17,7 +17,7 @@ RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 FROM python:3.13-slim
 
 # Non-root user — defense in depth. UID 1000 is conventional.
-RUN useradd --create-home --uid 1000 tarti
+RUN useradd --create-home --uid 1000 thundrly
 
 # Copy installed packages from the builder.
 COPY --from=builder /install /usr/local
@@ -26,16 +26,16 @@ WORKDIR /app
 
 # Only the parts the running server actually needs. tests/ and scripts/
 # are dev tooling and stay out of the image.
-COPY --chown=tarti:tarti app ./app
-COPY --chown=tarti:tarti alembic ./alembic
-COPY --chown=tarti:tarti alembic.ini ./alembic.ini
+COPY --chown=thundrly:thundrly app ./app
+COPY --chown=thundrly:thundrly alembic ./alembic
+COPY --chown=thundrly:thundrly alembic.ini ./alembic.ini
 
 # Ensure the SQLite default path is writable in case DATABASE_URL is
 # unset (e.g. first-run misconfiguration); production uses Postgres so
 # this directory just sits empty.
-RUN mkdir -p /app/app/data && chown -R tarti:tarti /app/app/data
+RUN mkdir -p /app/app/data && chown -R thundrly:thundrly /app/app/data
 
-USER tarti
+USER thundrly
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

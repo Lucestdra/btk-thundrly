@@ -37,7 +37,7 @@ export function Footer() {
             <div className="flex items-center gap-2.5 mb-5">
               <span className="inline-block h-2 w-2 rounded-full bg-ink" />
               <span className="font-display text-[15px] font-medium tracking-tight text-ink">
-                Tartı
+                Thundrly
               </span>
             </div>
             <p className="text-[15px] text-ink-soft max-w-sm leading-relaxed">
@@ -68,7 +68,7 @@ export function Footer() {
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           <div className="text-[12px] text-ink-muted">
-            © {new Date().getFullYear()} Tartı — MVP / Demo. Sentetik verilerle çalışır.
+            © {new Date().getFullYear()} Thundrly — MVP / Demo. Sentetik verilerle çalışır.
           </div>
           <div className="text-[12px] text-ink-muted">
             Türkçe arayüz · Manifest V3 · LangGraph

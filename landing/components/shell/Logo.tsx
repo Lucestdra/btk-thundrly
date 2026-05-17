@@ -59,7 +59,7 @@ export function Logo({ size = "md", className, showWordmark = true }: LogoProps)
       <LogoMark className={s.mark} />
       {showWordmark && (
         <span className={cn("font-display font-normal tracking-tight leading-none", s.text)}>
-          Tartı
+          Thundrly
         </span>
       )}
     </span>

@@ -1,1 +1,1 @@
-"""Tartı — backend package."""
+"""Thundrly — backend package."""

@@ -24,7 +24,7 @@ from app.db.migrations import run_migrations
 from app.db.seed import seed_if_empty
 
 configure_logging()
-logger = logging.getLogger("tarti")
+logger = logging.getLogger("thundrly")
 
 DEFAULT_ORIGINS = [
     "http://localhost:3000",
@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="Tartı — Backend",
+    title="Thundrly — Backend",
     description=(
         "Türk e-ticaret için 5 ajanlı satın alma analiz servisi. "
         "Fiyat geçmişi crowdsource veritabanından beslenir."
@@ -87,7 +87,7 @@ app.include_router(api_router, prefix="/api")
 @app.get("/", include_in_schema=False)
 def root() -> dict:
     return {
-        "service": "tarti-backend",
+        "service": "thundrly-backend",
         "version": "0.1.0",
         "docs": "/docs",
     }

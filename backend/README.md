@@ -1,6 +1,6 @@
 # /backend
 
-Tartı — FastAPI backend. 5 deterministik ajan, tek karar. Fiyat geçmişi
+Thundrly — FastAPI backend. 5 deterministik ajan, tek karar. Fiyat geçmişi
 crowdsource veritabanından beslenir (SQLAlchemy + SQLite varsayılan, Postgres
 opt-in).
 
@@ -43,7 +43,7 @@ uvicorn app.main:app --reload
 Postgres'e geçmek için `.env` içinde `DATABASE_URL` ayarla:
 
 ```
-DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/tarti
+DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/thundrly
 ```
 
 Şema bootstrap'i `Base.metadata.create_all` ile yapılır. İlk gerçek
