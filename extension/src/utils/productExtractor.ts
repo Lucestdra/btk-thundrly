@@ -24,7 +24,6 @@ import type {
   Review,
   SessionContext,
 } from "@shared/types";
-import { redHoodieRequest } from "@shared/demo/demoPayloads";
 import {
   DEMO_REVIEW_SELECTORS,
   PLATFORM_PACKS,
@@ -423,13 +422,12 @@ export function buildAnalyzeRequest(
     imageUrl: basics.imageUrl,
   };
 
-  const scrapedReviews = extractReviews(host);
-  // Fall back to the canonical fixture only when the page exposes no
-  // review widget at all — pages with empty review sections (zero items
-  // matched) still get an empty array, so the agent reports "Yorum
-  // Verisi Yok" rather than fabricating signal.
-  const reviews: Review[] =
-    scrapedReviews.length > 0 ? scrapedReviews : redHoodieRequest.reviews ?? [];
+  // Reviews: only what we scraped from the live page. Never substitute
+  // the demo fixture — doing so causes the review agent to "discover"
+  // the fixture's duplicate-pair patterns on every page where review
+  // extraction misses (e.g. Trendyol's lazy-loaded review widget that
+  // lives under /yorumlar), poisoning real verdicts with fake findings.
+  const reviews: Review[] = extractReviews(host);
   const priceHistory: PriceHistoryPoint[] = [];
 
   return {

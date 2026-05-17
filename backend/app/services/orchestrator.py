@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session
 from app.models.schemas import AnalyzeRequest, AnalyzeResponse
 from app.services import graph as analysis_graph
 from app.services.price_history import get_recent
-from app.services.user_budget import get_or_default as get_budget_or_default
+from app.services.user_budget import get as get_budget
 
 
 def analyze(req: AnalyzeRequest, *, db: Optional[Session] = None) -> AnalyzeResponse:
@@ -34,10 +34,12 @@ def analyze(req: AnalyzeRequest, *, db: Optional[Session] = None) -> AnalyzeResp
             req = req.model_copy(update={"priceHistory": fetched})
 
     # User budget: load from `user_budgets` keyed on (userId, category)
-    # if the caller didn't supply one. Falls back to a permissive default
-    # when no row exists — budget_agent gets something to score against.
+    # if the caller didn't supply one. If no row exists we leave it as
+    # ``None`` — budget_agent reports "Bütçe Verisi Yok" honestly rather
+    # than scoring against a fabricated default.
     if req.userBudget is None and db is not None:
-        budget = get_budget_or_default(db, req.userId, req.product.category)
-        req = req.model_copy(update={"userBudget": budget})
+        stored = get_budget(db, req.userId, req.product.category)
+        if stored is not None:
+            req = req.model_copy(update={"userBudget": stored})
 
     return analysis_graph.run(req)

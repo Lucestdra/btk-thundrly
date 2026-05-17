@@ -28,7 +28,25 @@
       "matches": [
         "*://*.trendyol.com/*",
         "*://*.hepsiburada.com/*",
-        "*://*.n11.com/*"
+        "*://*.n11.com/*",
+        "*://*.amazon.com.tr/*",
+        "*://*.ciceksepeti.com/*",
+        "*://*.mediamarkt.com.tr/*",
+        "*://*.teknosa.com/*",
+        "*://*.vatanbilgisayar.com/*",
+        "*://*.boyner.com.tr/*",
+        "*://*.lcwaikiki.com/*",
+        "*://*.defacto.com.tr/*",
+        "*://*.modanisa.com/*",
+        "*://*.a101.com.tr/*",
+        "*://*.migros.com.tr/*",
+        "*://*.carrefoursa.com/*",
+        "*://*.beymen.com/*",
+        "*://*.pazarama.com/*",
+        "*://*.pttavm.com/*",
+        "*://*.tchibo.com.tr/*",
+        "*://*.decathlon.com.tr/*",
+        "*://*.ikea.com.tr/*"
       ],
       "js": ["src/contentScript.ts"],
       "run_at": "document_idle"
@@ -52,7 +70,25 @@
     "http://localhost:8000/*",
     "https://*.trendyol.com/*",
     "https://*.hepsiburada.com/*",
-    "https://*.n11.com/*"
+    "https://*.n11.com/*",
+    "https://*.amazon.com.tr/*",
+    "https://*.ciceksepeti.com/*",
+    "https://*.mediamarkt.com.tr/*",
+    "https://*.teknosa.com/*",
+    "https://*.vatanbilgisayar.com/*",
+    "https://*.boyner.com.tr/*",
+    "https://*.lcwaikiki.com/*",
+    "https://*.defacto.com.tr/*",
+    "https://*.modanisa.com/*",
+    "https://*.a101.com.tr/*",
+    "https://*.migros.com.tr/*",
+    "https://*.carrefoursa.com/*",
+    "https://*.beymen.com/*",
+    "https://*.pazarama.com/*",
+    "https://*.pttavm.com/*",
+    "https://*.tchibo.com.tr/*",
+    "https://*.decathlon.com.tr/*",
+    "https://*.ikea.com.tr/*"
   ],
   "permissions": ["storage"]
 }

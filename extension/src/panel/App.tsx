@@ -5,6 +5,7 @@ import {
   analyzePurchaseWithProgress,
   type StreamEvent,
 } from "@/api/client";
+import { detectHost, platformLabel } from "@/utils/domDetector";
 import "./Panel.css";
 
 type Phase = "loading" | "result" | "error";
@@ -48,6 +49,31 @@ const decisionLabel: Record<Decision, string> = {
   red: "Kırmızı",
 };
 
+const AGENT_LABELS: { key: keyof AnalyzeResponse["agents"]; short: string }[] = [
+  { key: "reviewAgent", short: "Yorum" },
+  { key: "priceAgent", short: "Fiyat" },
+  { key: "budgetAgent", short: "Bütçe" },
+  { key: "impulseAgent", short: "Dürtü" },
+];
+
+function scoreTone(score: number): "green" | "yellow" | "red" {
+  if (score < 40) return "green";
+  if (score < 70) return "yellow";
+  return "red";
+}
+
+function formatPrice(price: number, currency: string): string {
+  try {
+    return new Intl.NumberFormat("tr-TR", {
+      style: "currency",
+      currency: currency || "TRY",
+      maximumFractionDigits: 0,
+    }).format(price);
+  } catch {
+    return `${price} ${currency}`;
+  }
+}
+
 export interface PanelProps {
   request: AnalyzeRequest;
   onContinue: () => void;
@@ -75,7 +101,6 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
     cancelled.current = false;
     const pendingTimers: number[] = [];
 
-    // Advance stages on backend events, respecting STAGE_MIN_RUNNING_MS.
     const completeStage = (key: StageKey) => {
       if (cancelled.current) return;
       const i = STAGES.findIndex((s) => s.key === key);
@@ -88,11 +113,9 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
       const fire = () => {
         if (cancelled.current) return;
         setStatuses((prev) => {
-          // If already done, no-op
           if (prev[i] === "done") return prev;
           const next = prev.slice();
           next[i] = "done";
-          // Start the next pending stage running.
           if (i + 1 < next.length && next[i + 1] === "pending") {
             next[i + 1] = "running";
             const nextKey = STAGES[i + 1].key;
@@ -110,14 +133,10 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
       if (event.event === "node_finished") {
         completeStage(event.node);
       }
-      // 'verdict' and 'error' are handled by the awaited promise.
     };
 
     const transitionToResult = (response: AnalyzeResponse) => {
       if (cancelled.current) return;
-
-      // Make sure every stage shows "done" before we flip phases, including
-      // the decision stage (the verdict event implicitly completes it).
       completeStage("decision");
 
       const totalElapsed = Date.now() - startedAt.current;
@@ -127,7 +146,7 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
           if (cancelled.current) return;
           setResult(response);
           setPhase("result");
-        }, wait + 80), // small breathing room after last stage flips done
+        }, wait + 80),
       );
     };
 
@@ -136,8 +155,6 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
         const { response } = await analyzePurchaseWithProgress(request, handleEvent);
         transitionToResult(response);
       } catch {
-        // Final safety net — go straight to the legacy one-shot path with
-        // its built-in fallback fixture.
         try {
           const response = await analyzePurchase(request);
           transitionToResult(response);
@@ -156,6 +173,8 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
   }, [request]);
 
   const tone = useMemo(() => (result ? decisionToneClass[result.decision] : "red"), [result]);
+  const platform = useMemo(() => platformLabel(detectHost(location.href)), []);
+  const product = request.product;
 
   return (
     <div className="kg-panel" role="dialog" aria-live="polite" aria-label="Thundrly analiz paneli">
@@ -167,17 +186,39 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
             <strong>5 saniyelik kontrol</strong>
           </div>
         </div>
-        {phase === "result" && result && (
-          <span className={`kg-chip ${tone} kg-${tone}`}>
-            <span className="kg-chip-dot" />
-            {decisionLabel[result.decision]} · {result.riskScore}
-          </span>
+        <button className="kg-x" aria-label="Kapat" onClick={onClose}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+            <path d="M6 6l12 12M18 6L6 18" />
+          </svg>
+        </button>
+      </div>
+
+      {/* Product preview — always visible */}
+      <div className="kg-product">
+        {product.imageUrl ? (
+          <img className="kg-product-img" src={product.imageUrl} alt="" loading="lazy" />
+        ) : (
+          <div className="kg-product-img kg-product-img-placeholder" aria-hidden="true">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <path d="M21 15l-5-5L5 21" />
+            </svg>
+          </div>
         )}
+        <div className="kg-product-body">
+          <div className="kg-product-title" title={product.title}>{product.title}</div>
+          <div className="kg-product-meta">
+            <span className="kg-product-price">
+              {formatPrice(product.price, product.currency)}
+            </span>
+            <span className="kg-product-dot">·</span>
+            <span className="kg-product-platform">{platform}</span>
+          </div>
+        </div>
       </div>
 
       {phase === "loading" && (
         <>
-          <h3 className="kg-title" style={{ color: "#ccdbdc" }}>Ajanlar paralel çalışıyor...</h3>
           <ul className="kg-loading-list">
             {STAGES.map((s, i) => {
               const st = statuses[i];
@@ -185,17 +226,17 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
                 <li key={s.key} className={`kg-loading-item ${st}`}>
                   <span className="kg-step-icon">
                     {st === "done" && (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                         <path d="M5 13l4 4L19 7" />
                       </svg>
                     )}
                     {st === "running" && (
-                      <svg className="kg-spin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <svg className="kg-spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                         <path d="M21 12a9 9 0 11-6.219-8.56" />
                       </svg>
                     )}
                     {st === "pending" && (
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                         <circle cx="12" cy="12" r="9" />
                       </svg>
                     )}
@@ -210,16 +251,49 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
 
       {phase === "result" && result && (
         <>
-          <h3 className={`kg-title kg-${tone}`}>{result.summary}</h3>
+          {/* Big verdict banner */}
+          <div className={`kg-verdict kg-verdict-${tone}`}>
+            <div className="kg-verdict-left">
+              <span className="kg-verdict-dot" />
+              <span className="kg-verdict-label">{decisionLabel[result.decision]}</span>
+            </div>
+            <div className="kg-verdict-score">
+              <span className="kg-verdict-score-num">{result.riskScore}</span>
+              <span className="kg-verdict-score-suf">/100</span>
+            </div>
+          </div>
+
+          {/* Agent score bars */}
+          <div className="kg-agents">
+            {AGENT_LABELS.map(({ key, short }) => {
+              const score = Math.max(0, Math.min(100, result.agents[key]?.score ?? 0));
+              const tcls = scoreTone(score);
+              return (
+                <div className="kg-agent" key={key}>
+                  <div className="kg-agent-row">
+                    <span className="kg-agent-label">{short}</span>
+                    <span className={`kg-agent-score kg-${tcls}`}>{score}</span>
+                  </div>
+                  <div className="kg-agent-track">
+                    <div
+                      className={`kg-agent-fill kg-fill-${tcls}`}
+                      style={{ width: `${score}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Summary + reasons */}
+          <p className="kg-summary">{result.summary}</p>
           <ul className={`kg-reasons ${tone}`}>
             {result.reasons.map((r, i) => (
               <li key={i}>
-                <span style={{ color: "rgba(204, 219, 220, 0.84)" }}>{r}</span>
+                <span className="kg-reason-text">{r}</span>
               </li>
             ))}
           </ul>
-
-          <div className="kg-divider" />
 
           <div className="kg-actions">
             <button className="kg-btn kg-btn-primary" onClick={onPause}>
@@ -229,16 +303,17 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
               Yine de Devam Et
             </button>
           </div>
-
-          <button className="kg-close" onClick={onClose}>
-            Analizi Kapat
-          </button>
         </>
       )}
 
       {phase === "error" && (
         <>
-          <h3 className="kg-title kg-red">Analiz tamamlanamadı</h3>
+          <div className={`kg-verdict kg-verdict-red`}>
+            <div className="kg-verdict-left">
+              <span className="kg-verdict-dot" />
+              <span className="kg-verdict-label">Analiz tamamlanamadı</span>
+            </div>
+          </div>
           <div className="kg-error">
             Sunucuya ulaşılamadı{errorMsg ? ` — ${errorMsg}` : ""}. Hata olsa da kararını sen veriyorsun.
           </div>

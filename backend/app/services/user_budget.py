@@ -1,19 +1,25 @@
 """User budget repository.
 
-Two public functions:
+Three public functions:
 
-    get_or_default(db, user_id, category)  → UserBudget snapshot
+    get(db, user_id, category)             → Optional[UserBudget]
+    get_or_default(db, user_id, category)  → UserBudget snapshot (legacy)
     upsert(db, user_id, category, budget)  → persisted row
 
-`get_or_default` never raises and never returns `None`: if no row exists
-for the (user_id, category) pair, a permissive default is returned so the
-budget_agent always has something to score against. This is deliberate —
-"no budget data" should produce a neutral verdict, not a crash.
+`get` returns ``None`` when no row exists — orchestrator uses this so the
+budget_agent honestly reports "Bütçe Verisi Yok" instead of scoring
+against a fabricated default, which would bias every analysis for users
+who haven't set a budget.
+
+`get_or_default` is retained for the GET /api/user-budget endpoint where
+returning a sane default is preferable to a 404, but it is no longer
+used inside the analysis path.
 """
 
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -21,10 +27,9 @@ from sqlalchemy.orm import Session
 from app.db.models import UserBudgetRow
 from app.models.schemas import UserBudget
 
-# Permissive defaults used when no budget row exists for (user_id, category).
-# Limits are deliberately high enough that the budget_agent will say
-# "rahat aralıkta", so unknown users / new categories never produce a
-# false-positive overrun warning.
+# Permissive defaults — only used by the GET endpoint to give the frontend
+# a sane starting state when no row exists yet. Never injected into the
+# analysis path; see `get()` for that.
 DEFAULT_BUDGET = UserBudget(
     monthlyLimit=10_000.0,
     categoryLimit=5_000.0,
@@ -34,9 +39,24 @@ DEFAULT_BUDGET = UserBudget(
 )
 
 
-def get_or_default(db: Session, user_id: str, category: str) -> UserBudget:
+def _row_to_budget(row: UserBudgetRow) -> UserBudget:
+    return UserBudget(
+        monthlyLimit=row.monthly_limit,
+        monthlySpent=row.monthly_spent,
+        categoryLimit=row.category_limit,
+        categorySpent=row.category_spent,
+        currency=row.currency,  # type: ignore[arg-type]
+    )
+
+
+def get(db: Session, user_id: str, category: str) -> Optional[UserBudget]:
+    """Return the stored budget for (user_id, category) or ``None``.
+
+    Used by the orchestrator so the budget_agent can honestly report
+    "Bütçe Verisi Yok" when the user hasn't configured limits yet.
+    """
     if not user_id or not category:
-        return DEFAULT_BUDGET
+        return None
 
     row = db.execute(
         select(UserBudgetRow).where(
@@ -45,16 +65,12 @@ def get_or_default(db: Session, user_id: str, category: str) -> UserBudget:
         )
     ).scalar_one_or_none()
 
-    if row is None:
-        return DEFAULT_BUDGET
+    return _row_to_budget(row) if row is not None else None
 
-    return UserBudget(
-        monthlyLimit=row.monthly_limit,
-        monthlySpent=row.monthly_spent,
-        categoryLimit=row.category_limit,
-        categorySpent=row.category_spent,
-        currency=row.currency,  # type: ignore[arg-type]
-    )
+
+def get_or_default(db: Session, user_id: str, category: str) -> UserBudget:
+    budget = get(db, user_id, category)
+    return budget if budget is not None else DEFAULT_BUDGET
 
 
 def upsert(
