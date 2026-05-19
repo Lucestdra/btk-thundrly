@@ -20,7 +20,7 @@ const cols = [
     title: "Geliştirici",
     links: [
       { label: "GitHub", href: "https://github.com/Lucestdra/btk-thundrly.git" },
-      { label: "İletişim", href: "#" },
+      { label: "İletişim", href: "/#iletisim" },
     ],
   },
 ];

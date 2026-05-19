@@ -8,6 +8,7 @@ import { WhyUniqueSection } from "@/components/sections/WhyUniqueSection";
 import { AudienceSection } from "@/components/sections/AudienceSection";
 import { VerdictShowcaseSection } from "@/components/sections/VerdictShowcaseSection";
 import { FinalCTASection } from "@/components/sections/FinalCTASection";
+import { ContactSection } from "@/components/sections/ContactSection";
 import { Footer } from "@/components/sections/Footer";
 
 export default function HomePage() {
@@ -24,6 +25,7 @@ export default function HomePage() {
         <AudienceSection />
         <VerdictShowcaseSection />
         <FinalCTASection />
+        <ContactSection />
       </main>
       <Footer />
     </>
