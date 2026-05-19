@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalyzeRequest, AnalyzeResponse, Decision } from "@shared/types/analysis";
 import {
-  analyzePurchase,
   analyzePurchaseWithProgress,
   type StreamEvent,
 } from "@/api/client";
@@ -68,6 +67,58 @@ function scoreTone(score: number): "green" | "yellow" | "red" {
   if (score < 40) return "green";
   if (score < 70) return "yellow";
   return "red";
+}
+
+/**
+ * Map a raw backend error string to a clean Turkish message pair we can
+ * show in the panel. Power users still see the raw cause via the
+ * console.error in the analyze catch — the panel never surfaces HTTP
+ * status codes or JSON to end users.
+ */
+function categorizeError(raw: string | null): { title: string; body: string } {
+  const msg = (raw || "").toLowerCase();
+  // Schema mismatch — usually the extractor produced an out-of-range
+  // value the backend couldn't accept. From the user's POV this means
+  // "we couldn't read the product page correctly".
+  if (msg.includes("422") || msg.includes("validation")) {
+    return {
+      title: "Ürün bilgisi okunamadı",
+      body: "Bu sayfanın yapısı tanımadığımız bir şekilde değişmiş. Karar sende.",
+    };
+  }
+  // Server-side failure.
+  if (/\bhttp 5\d{2}\b/.test(msg) || msg.includes("internal server")) {
+    return {
+      title: "Sunucu geçici olarak yanıt vermiyor",
+      body: "Birkaç dakika sonra tekrar dene. Karar sende.",
+    };
+  }
+  // Rate limit.
+  if (msg.includes("429") || msg.includes("rate limit") || msg.includes("too many")) {
+    return {
+      title: "Çok hızlı gidiyoruz",
+      body: "Kısa bir mola verdik. Birkaç dakika sonra tekrar dene.",
+    };
+  }
+  // Network / unreachable.
+  if (
+    msg.includes("failed to fetch") ||
+    msg.includes("networkerror") ||
+    msg.includes("yanıt yok") ||
+    msg.includes("disconnected") ||
+    msg.includes("port") ||
+    msg.includes("timeout")
+  ) {
+    return {
+      title: "Bağlantı kurulamadı",
+      body: "İnternet bağlantını kontrol et. Karar sende.",
+    };
+  }
+  // Fallback — keep it human; never leak the raw HTTP detail.
+  return {
+    title: "Analiz tamamlanamadı",
+    body: "Bu ürün için sinyalleri toplayamadık. Karar sende.",
+  };
 }
 
 function formatPrice(price: number, currency: string): string {
@@ -162,15 +213,13 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
       try {
         const { response } = await analyzePurchaseWithProgress(request, handleEvent);
         transitionToResult(response);
-      } catch {
-        try {
-          const response = await analyzePurchase(request);
-          transitionToResult(response);
-        } catch (e) {
-          if (cancelled.current) return;
-          setErrorMsg(e instanceof Error ? e.message : String(e));
-          setPhase("error");
-        }
+      } catch (e) {
+        if (cancelled.current) return;
+        // Keep the raw detail in the console for power users; the panel
+        // shows a clean Turkish message via categorizeError() below.
+        console.error("[Thundrly] analyze failed:", e);
+        setErrorMsg(e instanceof Error ? e.message : String(e));
+        setPhase("error");
       }
     })();
 
@@ -339,27 +388,32 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
         </>
       )}
 
-      {phase === "error" && (
-        <>
-          <div className={`kg-verdict kg-verdict-red`}>
-            <div className="kg-verdict-left">
-              <span className="kg-verdict-dot" />
-              <span className="kg-verdict-label">Analiz tamamlanamadı</span>
+      {phase === "error" && (() => {
+        const cat = categorizeError(errorMsg);
+        return (
+          <>
+            <div className="kg-empty">
+              <div className="kg-empty-icon" aria-hidden="true">
+                <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 8v4" />
+                  <path d="M12 16h.01" />
+                </svg>
+              </div>
+              <div className="kg-empty-title">{cat.title}</div>
+              <div className="kg-empty-body">{cat.body}</div>
             </div>
-          </div>
-          <div className="kg-error">
-            Sunucuya ulaşılamadı{errorMsg ? ` — ${errorMsg}` : ""}. Hata olsa da kararını sen veriyorsun.
-          </div>
-          <div className="kg-actions">
-            <button className="kg-btn kg-btn-primary" onClick={onContinue}>
-              Devam Et
-            </button>
-            <button className="kg-btn" onClick={onClose}>
-              Analizi Kapat
-            </button>
-          </div>
-        </>
-      )}
+            <div className="kg-actions">
+              <button className="kg-btn kg-btn-primary" onClick={onContinue}>
+                Satın almaya devam et
+              </button>
+              <button className="kg-btn" onClick={onClose}>
+                Kapat
+              </button>
+            </div>
+          </>
+        );
+      })()}
     </div>
   );
 }

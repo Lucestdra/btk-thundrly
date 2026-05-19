@@ -580,7 +580,7 @@
   to   { transform: rotate(360deg); }
 }
 
-/* ---------- Error ---------- */
+/* ---------- Error (legacy red box, kept for any non-panel callers) ---------- */
 
 .kg-error {
   font-size: 12.5px;
@@ -591,6 +591,47 @@
   padding: 10px 12px;
   margin-bottom: 12px;
   line-height: 1.5;
+}
+
+/* ---------- Empty / soft-error state (user-facing) ----------
+   Used for the "we couldn't analyze this page" case. Looks like a
+   gentle informational card, NOT a red alarm — failing to analyze a
+   page is not the user's fault. */
+
+.kg-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 8px;
+  padding: 22px 18px 18px;
+  border-radius: var(--kg-radius-lg);
+  background: var(--kg-surface-0);
+  border: 1px solid var(--kg-line-soft);
+  margin-bottom: 14px;
+}
+.kg-empty-icon {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--kg-brand);
+  background: color-mix(in srgb, var(--kg-brand) 12%, transparent);
+  margin-bottom: 2px;
+}
+.kg-empty-title {
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--kg-ink-strong);
+  letter-spacing: -0.008em;
+}
+.kg-empty-body {
+  font-size: 12.5px;
+  color: var(--kg-ink-soft);
+  line-height: 1.5;
+  max-width: 280px;
 }
 
 /* ──────────────────────────────────────────────────────────────

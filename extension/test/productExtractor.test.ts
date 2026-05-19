@@ -10,7 +10,7 @@
 
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { extractProductBasics } from "@/utils/productExtractor";
+import { extractProductBasics, parseRating } from "@/utils/productExtractor";
 
 beforeEach(() => {
   document.head.innerHTML = "";
@@ -247,5 +247,41 @@ describe("extractProductBasics — demo data-attrs", () => {
     expect(out.category).toBe("Giyim");
     expect(out.rating).toBeCloseTo(4.7);
     expect(out.reviewCount).toBe(842);
+  });
+});
+
+// ---------- parseRating (May-2026 422 incident) ----------
+
+describe("parseRating", () => {
+  it("returns plain numeric values inside 0..5", () => {
+    expect(parseRating(4.7)).toBeCloseTo(4.7);
+    expect(parseRating("4.7")).toBeCloseTo(4.7);
+    expect(parseRating("4,7")).toBeCloseTo(4.7);
+    expect(parseRating("0")).toBe(0);
+    expect(parseRating("5")).toBe(5);
+  });
+
+  it("rejects out-of-range raw numbers (would 422 the backend)", () => {
+    expect(parseRating(54.7)).toBeUndefined();
+    expect(parseRating(-1)).toBeUndefined();
+    expect(parseRating(5.1)).toBeUndefined();
+    expect(parseRating(NaN)).toBeUndefined();
+    expect(parseRating(Infinity)).toBeUndefined();
+  });
+
+  it("picks the first in-range token from Amazon-style sentences", () => {
+    // The exact Mayıs 2026 repro: Amazon TR shows "5 üzerinden 4,7".
+    // The old `parsePrice` path stripped letters and joined "5" + "4,7"
+    // into "54,7" → 54.7 → 422. parseRating must yield 4.7 here.
+    expect(parseRating("5 üzerinden 4,7")).toBeCloseTo(4.7);
+    expect(parseRating("4.6 out of 5 stars")).toBeCloseTo(4.6);
+    expect(parseRating("ortalama 4,2 (1.234 değerlendirme)")).toBeCloseTo(4.2);
+  });
+
+  it("returns undefined when no in-range number exists", () => {
+    expect(parseRating("")).toBeUndefined();
+    expect(parseRating(null)).toBeUndefined();
+    expect(parseRating(undefined)).toBeUndefined();
+    expect(parseRating("100 stars")).toBeUndefined();
   });
 });

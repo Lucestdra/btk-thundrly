@@ -93,6 +93,65 @@ function parseCount(value: unknown): number | undefined {
   return n !== undefined ? Math.round(n) : undefined;
 }
 
+/**
+ * Rating-specific parser. Cannot use `parsePrice` for ratings — it
+ * strips non-numerics and concatenates digits, so Amazon's
+ * "5 üzerinden 4,7" or "4.6 out of 5 stars" become 54.7 / 465 and
+ * blow past the backend's 0..5 schema (real bug, Mayıs 2026).
+ *
+ * Strategy: find every decimal number in the text, prefer the FIRST
+ * one whose value is in [0, 5]. Anything outside that range is
+ * discarded — including the "5" from "5 üzerinden …", which appears
+ * before the actual rating but with a value equal to the upper bound.
+ *
+ * Returns `undefined` when nothing in range — better to omit `rating`
+ * from the payload than to ship a wrong number.
+ */
+export function parseRating(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value >= 0 && value <= 5 ? value : undefined;
+  }
+  if (value === null || value === undefined) return undefined;
+  const raw = String(value).trim();
+  if (!raw) return undefined;
+
+  // 1. Explicit "out-of-N" patterns first — they unambiguously name
+  //    the rating value vs the scale.
+  //
+  //    "5 üzerinden 4,7"   → 4.7
+  //    "4.6 out of 5"      → 4.6
+  //    "4,2 / 5"           → 4.2
+  const patterns = [
+    /\büzerinden\s+(\d+(?:[.,]\d+)?)/i,        // TR: "X üzerinden Y" — Y is rating
+    /(\d+(?:[.,]\d+)?)\s*\/\s*5\b/,            // "Y / 5"
+    /(\d+(?:[.,]\d+)?)\s*out of\s*5\b/i,       // "Y out of 5"
+    /(\d+(?:[.,]\d+)?)\s*yıldız/i,             // "Y yıldız"
+    /(\d+(?:[.,]\d+)?)\s*puan/i,               // "Y puan"
+  ];
+  for (const re of patterns) {
+    const hit = raw.match(re);
+    if (hit) {
+      const n = parseFloat(hit[1].replace(",", "."));
+      if (Number.isFinite(n) && n >= 0 && n <= 5) return n;
+    }
+  }
+
+  // 2. Fallback: collect every in-range numeric token. Prefer a
+  //    fractional value (< 5) over the boundary value 5 — when both
+  //    appear, "5" is almost always the scale, not the rating.
+  const numRe = /(\d+(?:[.,]\d+)?)/g;
+  const candidates: number[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = numRe.exec(raw)) !== null) {
+    const n = parseFloat(m[1].replace(",", "."));
+    if (Number.isFinite(n) && n >= 0 && n <= 5) candidates.push(n);
+  }
+  if (candidates.length === 0) return undefined;
+  // Prefer the first sub-5 candidate; fall back to whatever we have.
+  const subFive = candidates.find((n) => n < 5);
+  return subFive !== undefined ? subFive : candidates[0];
+}
+
 // ---------- Strategy 1: demo data-attributes ----------
 
 function readFromDemo(): Partial<Product> | null {
@@ -103,7 +162,7 @@ function readFromDemo(): Partial<Product> | null {
     price: parsePrice(el.dataset.kgPrice),
     originalPrice: parsePrice(el.dataset.kgOriginalPrice),
     category: el.dataset.kgCategory,
-    rating: parsePrice(el.dataset.kgRating),
+    rating: parseRating(el.dataset.kgRating),
     reviewCount: parseCount(el.dataset.kgReviewCount),
     imageUrl: el.dataset.kgImage,
   };
@@ -252,7 +311,7 @@ function readFromLD(): Partial<Product> {
     title: ld.name,
     price: parsePrice(ldPrice),
     category,
-    rating: parsePrice(ld.aggregateRating?.ratingValue),
+    rating: parseRating(ld.aggregateRating?.ratingValue),
     reviewCount: parseCount(reviewCount),
     imageUrl,
   };
@@ -277,7 +336,7 @@ function readFromMicrodata(): Partial<Product> {
   return {
     title: getMicroText("name"),
     price: parsePrice(getMicroText("price")),
-    rating: parsePrice(getMicroText("ratingValue")),
+    rating: parseRating(getMicroText("ratingValue")),
     reviewCount: parseCount(getMicroText("reviewCount") || getMicroText("ratingCount")),
     imageUrl: getMicroImage(),
   };
@@ -323,7 +382,7 @@ function readFromPlatform(host: Host): Partial<Product> {
     price: parsePrice(readText(pack.price)),
     originalPrice: parsePrice(readText(pack.originalPrice)),
     category: extractTopLevelCategory() ?? readText(pack.category),
-    rating: parsePrice(readText(pack.rating)),
+    rating: parseRating(readText(pack.rating)),
     reviewCount: parseCount(readText(pack.reviewCount)),
     imageUrl: readImg(pack.imageUrl),
   };
@@ -1104,7 +1163,7 @@ export function buildAnalyzeRequest(
 ): AnalyzeRequest {
   const basics = extractProductBasics(host);
 
-  const product: Product = {
+  const product: Product = sanitizeProduct({
     title: basics.title || "Ürün adı bulunamadı",
     price: basics.price ?? 0,
     originalPrice: basics.originalPrice,
@@ -1115,14 +1174,14 @@ export function buildAnalyzeRequest(
     url: location.href,
     imageUrl: basics.imageUrl,
     legalLowestPrice30d: extractLegalLowestPrice30d(),
-  };
+  });
 
   // Reviews: only what we scraped from the live page. Never substitute
   // the demo fixture — doing so causes the review agent to "discover"
   // the fixture's duplicate-pair patterns on every page where review
   // extraction misses (e.g. Trendyol's lazy-loaded review widget that
   // lives under /yorumlar), poisoning real verdicts with fake findings.
-  const reviews: Review[] = extractReviews(host);
+  const reviews: Review[] = sanitizeReviews(extractReviews(host));
   const priceHistory: PriceHistoryPoint[] = [];
 
   return {
@@ -1133,6 +1192,82 @@ export function buildAnalyzeRequest(
     priceHistory,
     session: opts.session,
   };
+}
+
+/**
+ * Defense-in-depth sanitizer. Even with the per-field parsers tuned,
+ * a future site change can produce an out-of-range value (rating > 5,
+ * negative reviewCount, NaN, ±Infinity) that the backend rejects with
+ * a 422. Rather than asking the user to interpret an HTTP error, drop
+ * or clamp anything that wouldn't pass the Pydantic schema BEFORE we
+ * ship it. The Mayıs 2026 incident (parsePrice on Amazon's
+ * "5 üzerinden 4,7" → rating=54.7 → 422 → demo fixture rendered as
+ * "real") was the motivating bug.
+ */
+function sanitizeProduct(p: Product): Product {
+  const clean: Product = { ...p };
+
+  // Numbers must be finite. Drop anything else.
+  const finiteOrUndef = (
+    n: number | null | undefined,
+    lo: number,
+    hi: number,
+  ): number | undefined => {
+    if (typeof n !== "number" || !Number.isFinite(n)) return undefined;
+    if (n < lo || n > hi) return undefined;
+    return n;
+  };
+
+  // Required price: schema is ge=0, lt=10_000_000. Clamp to 0 (never undefined).
+  const safePrice = finiteOrUndef(clean.price, 0, 9_999_999);
+  clean.price = safePrice ?? 0;
+
+  // Optional numeric fields — drop if out of range so the field is omitted.
+  clean.originalPrice = finiteOrUndef(clean.originalPrice, 0, 9_999_999);
+  // Schema clamps rating to [0,5]. If a parser misbehaved, drop rather
+  // than guess a meaningless value.
+  clean.rating = finiteOrUndef(clean.rating, 0, 5);
+  // reviewCount must be an integer in [0, 10_000_000).
+  const rc = finiteOrUndef(clean.reviewCount, 0, 9_999_999);
+  clean.reviewCount = rc !== undefined ? Math.round(rc) : undefined;
+  clean.legalLowestPrice30d = finiteOrUndef(clean.legalLowestPrice30d, 0, 9_999_999);
+
+  // String length caps — title 1..512, category 1..128, url 8..2048, imageUrl ≤2048.
+  if (!clean.title || clean.title.length === 0) clean.title = "Ürün adı bulunamadı";
+  if (clean.title.length > 512) clean.title = clean.title.slice(0, 512);
+  if (!clean.category || clean.category.length === 0) clean.category = "Genel";
+  if (clean.category.length > 128) clean.category = clean.category.slice(0, 128);
+  if (clean.imageUrl && clean.imageUrl.length > 2048) clean.imageUrl = undefined;
+  // URL is required min-length 8; if extraction somehow returned a short
+  // string, swap to location.href which is always a full URL.
+  if (!clean.url || clean.url.length < 8) clean.url = location.href;
+  if (clean.url.length > 2048) clean.url = clean.url.slice(0, 2048);
+
+  return clean;
+}
+
+function sanitizeReviews(reviews: Review[]): Review[] {
+  return reviews
+    .map((r) => {
+      const rating = typeof r.rating === "number" && Number.isFinite(r.rating)
+        ? Math.max(0, Math.min(5, r.rating))
+        : NaN;
+      const text = typeof r.text === "string" ? r.text.slice(0, 2048) : "";
+      if (!Number.isFinite(rating) || text.length === 0) return null;
+      const helpfulCount =
+        typeof r.helpfulCount === "number" && Number.isFinite(r.helpfulCount)
+          ? Math.max(0, Math.round(r.helpfulCount))
+          : undefined;
+      return {
+        ...r,
+        rating,
+        text,
+        date: (r.date || "").slice(0, 32),
+        author: r.author ? r.author.slice(0, 128) : undefined,
+        helpfulCount,
+      } as Review;
+    })
+    .filter((r): r is Review => r !== null);
 }
 
 /**
