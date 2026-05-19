@@ -45,7 +45,14 @@ services:
       LOG_FORMAT: json
       ALLOWED_ORIGINS: https://thundrly.com,https://www.thundrly.com
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
-      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      # Default to a current model. `gemini-1.5-flash` was retired from
+      # the v1beta API in Q1 2026 and now returns 404 NOT_FOUND, taking
+      # the agents into a heuristic-only fallback. `gemini-2.5-flash`
+      # is the supported successor with comparable cost/latency. The
+      # in-code client (app/agents/_llm.py) also walks a fallback chain
+      # of model IDs if this one ever 404s, but keeping the default in
+      # sync here means no fallback is needed on a clean deploy.
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GEMINI_CACHE_TTL_SECONDS: ${GEMINI_CACHE_TTL_SECONDS:-900}
     ports:
       - "127.0.0.1:8000:8000"

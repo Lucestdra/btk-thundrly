@@ -101,25 +101,24 @@ def _agent(score: int, label: str = "test", findings=None) -> AgentResult:
     )
 
 
-class _CountingResponse:
-    def __init__(self, parsed=None, text: Optional[str] = None):
-        self.parsed = parsed
-        self.text = text or ""
+class _CountingClient:
+    """LLMClient stub with a call counter for cache-hit assertions.
 
+    Validates ``response_dict`` against the requested schema on every
+    call (same path production takes), and bumps ``call_count`` so the
+    test can assert cached calls don't re-invoke ``generate_json``.
+    """
 
-class _CountingModels:
-    def __init__(self, response: _CountingResponse):
-        self._response = response
+    provider = "gemini"
+    model = "gemini-2.5-flash"
+
+    def __init__(self, response_dict):
+        self._response_dict = response_dict
         self.call_count = 0
 
-    def generate_content(self, *, model, contents, config):  # noqa: ARG002
+    def generate_json(self, *, prompt, system_instruction, schema, temperature=0.3, model=None):  # noqa: ARG002
         self.call_count += 1
-        return self._response
-
-
-class _CountingClient:
-    def __init__(self, response: _CountingResponse):
-        self.models = _CountingModels(response)
+        return schema.model_validate(self._response_dict)
 
 
 # ---------- review_agent: cache prevents second call ----------
@@ -131,8 +130,8 @@ def test_review_agent_caches_on_same_reviews(monkeypatch):
         "label": "Şüpheli",
         "findings": [{"severity": "warn", "message": "tekrar oranı yüksek"}],
     }
-    client = _CountingClient(_CountingResponse(parsed=parsed))
-    monkeypatch.setattr(review_agent, "get_client", lambda: client)
+    client = _CountingClient(response_dict=parsed)
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: client)
 
     req = _req_with_reviews()
 
@@ -142,7 +141,7 @@ def test_review_agent_caches_on_same_reviews(monkeypatch):
     assert first.score == 60
     assert second.score == 60
     # Single LLM round-trip across two calls — second was served from cache.
-    assert client.models.call_count == 1
+    assert client.call_count == 1
 
 
 def test_review_agent_cache_misses_on_different_reviews(monkeypatch):
@@ -151,8 +150,8 @@ def test_review_agent_cache_misses_on_different_reviews(monkeypatch):
         "label": "Büyük Ölçüde Güvenilir",
         "findings": [{"severity": "info", "message": "ok"}],
     }
-    client = _CountingClient(_CountingResponse(parsed=parsed))
-    monkeypatch.setattr(review_agent, "get_client", lambda: client)
+    client = _CountingClient(response_dict=parsed)
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: client)
 
     a = _req_with_reviews()
     b = a.model_copy(
@@ -161,7 +160,7 @@ def test_review_agent_cache_misses_on_different_reviews(monkeypatch):
 
     review_agent.run(a)
     review_agent.run(b)
-    assert client.models.call_count == 2
+    assert client.call_count == 2
 
 
 # ---------- decision_agent: cache prevents second narration call ----------
@@ -173,8 +172,8 @@ def test_decision_agent_caches_on_same_agent_fingerprint(monkeypatch):
         "reasons": ["sebep 1", "sebep 2", "sebep 3"],
         "recommendedAction": "Birkaç noktayı tekrar gözden geçir",
     }
-    client = _CountingClient(_CountingResponse(parsed=narration))
-    monkeypatch.setattr(decision_agent, "get_client", lambda: client)
+    client = _CountingClient(response_dict=narration)
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: client)
 
     req = _req_with_reviews()
     review_r = _agent(40)
@@ -185,7 +184,7 @@ def test_decision_agent_caches_on_same_agent_fingerprint(monkeypatch):
     decision_agent.run(req, review=review_r, price=price_r, budget=budget_r, impulse=impulse_r)
     decision_agent.run(req, review=review_r, price=price_r, budget=budget_r, impulse=impulse_r)
 
-    assert client.models.call_count == 1
+    assert client.call_count == 1
 
 
 def test_decision_agent_cache_misses_on_different_agent_fingerprint(monkeypatch):
@@ -194,8 +193,8 @@ def test_decision_agent_cache_misses_on_different_agent_fingerprint(monkeypatch)
         "reasons": ["a", "b", "c"],
         "recommendedAction": "Birkaç noktayı tekrar gözden geçir",
     }
-    client = _CountingClient(_CountingResponse(parsed=narration))
-    monkeypatch.setattr(decision_agent, "get_client", lambda: client)
+    client = _CountingClient(response_dict=narration)
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: client)
 
     req = _req_with_reviews()
 
@@ -203,7 +202,7 @@ def test_decision_agent_cache_misses_on_different_agent_fingerprint(monkeypatch)
     # Bump price.score → fingerprint differs → cache miss.
     decision_agent.run(req, review=_agent(40), price=_agent(85), budget=_agent(45), impulse=_agent(40))
 
-    assert client.models.call_count == 2
+    assert client.call_count == 2
 
 
 # ---------- TTLCache: counters, prefix/predicate invalidation, per-call TTL ----------
@@ -300,16 +299,16 @@ def test_review_agent_force_refresh_bypasses_cache(monkeypatch):
         "label": "Şüpheli",
         "findings": [{"severity": "warn", "message": "tekrar"}],
     }
-    client = _CountingClient(_CountingResponse(parsed=parsed))
-    monkeypatch.setattr(review_agent, "get_client", lambda: client)
+    client = _CountingClient(response_dict=parsed)
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: client)
 
     req = _req_with_reviews()
     review_agent.run(req)
     review_agent.run(req)  # cache hit
-    assert client.models.call_count == 1
+    assert client.call_count == 1
 
     review_agent.run(req, force_refresh=True)
-    assert client.models.call_count == 2
+    assert client.call_count == 2
 
 
 def test_decision_agent_force_refresh_bypasses_cache(monkeypatch):
@@ -318,13 +317,13 @@ def test_decision_agent_force_refresh_bypasses_cache(monkeypatch):
         "reasons": ["a", "b", "c"],
         "recommendedAction": "Birkaç noktayı tekrar gözden geçir",
     }
-    client = _CountingClient(_CountingResponse(parsed=narration))
-    monkeypatch.setattr(decision_agent, "get_client", lambda: client)
+    client = _CountingClient(response_dict=narration)
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: client)
 
     req = _req_with_reviews()
     decision_agent.run(req, review=_agent(40), price=_agent(50), budget=_agent(45), impulse=_agent(40))
     decision_agent.run(req, review=_agent(40), price=_agent(50), budget=_agent(45), impulse=_agent(40))
-    assert client.models.call_count == 1
+    assert client.call_count == 1
 
     decision_agent.run(
         req,
@@ -334,4 +333,4 @@ def test_decision_agent_force_refresh_bypasses_cache(monkeypatch):
         impulse=_agent(40),
         force_refresh=True,
     )
-    assert client.models.call_count == 2
+    assert client.call_count == 2

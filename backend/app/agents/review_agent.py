@@ -39,8 +39,8 @@ from typing import List, Literal, Tuple
 
 from pydantic import BaseModel, Field
 
-from app.agents._gemini_client import get_client, get_model_name
 from app.agents._gemini_resilience import gemini_call
+from app.agents._llm import LLMClient, get_llm_client
 from app.core.cache import REVIEW_CACHE_TTL, gemini_cache
 from app.models.schemas import AgentFinding, AgentResult, AnalyzeRequest, Review
 
@@ -84,24 +84,24 @@ def run(req: AnalyzeRequest, *, force_refresh: bool = False) -> AgentResult:
             findings=[AgentFinding(severity="warn", message="Bu ürün için yeterli yorum verisi yok.")],
         )
 
-    client = get_client()
+    client = get_llm_client()
     if client is not None:
         try:
-            result = _run_with_gemini(client, req, force_refresh=force_refresh)
+            result = _run_with_llm(client, req, force_refresh=force_refresh)
             logger.info(
                 "review_agent.verdict",
                 extra={
                     "event": "review_agent.verdict",
-                    "path": "gemini",
-                    "model": get_model_name(),
+                    "path": client.provider,
+                    "model": client.model,
                     "score": result.score,
                     "label": result.label,
                     "reviews_seen": len(req.reviews),
                 },
             )
             return result
-        except Exception as exc:  # noqa: BLE001 - fall back on any Gemini error
-            logger.warning("Gemini çağrısı başarısız, heuristik fallback: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - fall back on any LLM error
+            logger.warning("LLM çağrısı başarısız, heuristik fallback: %s", exc)
 
     result = _run_heuristic(req)
     logger.info(
@@ -195,6 +195,14 @@ def _url_hash(url: str) -> str:
     return hashlib.sha1((url or "").encode("utf-8")).hexdigest()[:16]
 
 
+def _active_model_tag() -> str:
+    """Cache-key segment identifying the active LLM provider+model."""
+    client = get_llm_client()
+    if client is None:
+        return "no-llm"
+    return f"{client.provider}:{client.model}"
+
+
 def _reviews_cache_key(req: AnalyzeRequest) -> str:
     """Stable fingerprint of the review set, scoped by (user, url).
 
@@ -216,45 +224,32 @@ def _reviews_cache_key(req: AnalyzeRequest) -> str:
         )
         for r in req.reviews
     )
-    blob = json.dumps([get_model_name(), fingerprint], ensure_ascii=False).encode("utf-8")
+    blob = json.dumps([_active_model_tag(), fingerprint], ensure_ascii=False).encode("utf-8")
     digest = hashlib.sha256(blob).hexdigest()
     return f"rev::u={req.userId}:p={_url_hash(req.product.url)}:{digest}"
 
 
-def _run_with_gemini(client, req: AnalyzeRequest, *, force_refresh: bool = False) -> AgentResult:
+def _run_with_llm(client: LLMClient, req: AnalyzeRequest, *, force_refresh: bool = False) -> AgentResult:
     cache_key = _reviews_cache_key(req)
     if not force_refresh:
         cached = gemini_cache.get(cache_key)
         if cached is not None:
             return cached
 
-    # Compute the trust summary first so the prompt can cite it; if Gemini
-    # is unreachable we already have a fully-formed heuristic verdict to
-    # fall back on.
+    # Compute the trust summary first so the prompt can cite it; if the
+    # LLM is unreachable we already have a fully-formed heuristic
+    # verdict to fall back on.
     trust_summary = _compute_trust_summary(req.reviews)
     prompt = _build_prompt(req.reviews, trust_summary)
-    response = gemini_call(
-        lambda: client.models.generate_content(
-            model=get_model_name(),
-            contents=prompt,
-            config={
-                "system_instruction": _SYSTEM_INSTRUCTION,
-                "response_mime_type": "application/json",
-                "response_schema": _GeminiVerdict,
-                "temperature": 0.2,
-            },
+    verdict: _GeminiVerdict = gemini_call(
+        lambda: client.generate_json(
+            prompt=prompt,
+            system_instruction=_SYSTEM_INSTRUCTION,
+            schema=_GeminiVerdict,
+            temperature=0.2,
         ),
         label="review_agent",
     )
-
-    # The SDK exposes parsed text via .text; some versions also expose .parsed.
-    raw = getattr(response, "parsed", None) or _safe_parse(response)
-    if isinstance(raw, dict):
-        verdict = _GeminiVerdict.model_validate(raw)
-    elif isinstance(raw, _GeminiVerdict):
-        verdict = raw
-    else:
-        verdict = _GeminiVerdict.model_validate_json(response.text)
 
     if verdict.reasoning:
         # Logged for observability — useful when a verdict surprises a
@@ -285,17 +280,6 @@ def _run_with_gemini(client, req: AnalyzeRequest, *, force_refresh: bool = False
     )
     gemini_cache.set(cache_key, result, ttl=REVIEW_CACHE_TTL)
     return result
-
-
-def _safe_parse(response) -> dict | None:
-    """Best-effort: hand back a dict if the SDK gave us JSON text."""
-    text = getattr(response, "text", None)
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except (TypeError, ValueError):
-        return None
 
 
 # ---------- Heuristic fallback ----------

@@ -28,8 +28,8 @@ from typing import List, Literal, Tuple
 from pydantic import BaseModel, Field
 
 from app.agents._decision_rules import evaluate as evaluate_rules
-from app.agents._gemini_client import get_client, get_model_name
 from app.agents._gemini_resilience import gemini_call
+from app.agents._llm import LLMClient, get_llm_client
 from app.core.cache import DECISION_CACHE_TTL, gemini_cache
 from app.models.schemas import (
     AgentFinding,
@@ -150,10 +150,10 @@ def run(
         },
     )
 
-    client = get_client()
+    client = get_llm_client()
     if client is not None:
         try:
-            response = _build_with_gemini(
+            response = _build_with_llm(
                 client, req, decision, risk_score, label,
                 review=review, price=price, budget=budget, impulse=impulse,
                 triggered_rules=triggered,
@@ -163,15 +163,15 @@ def run(
                 "decision_agent.narration",
                 extra={
                     "event": "decision_agent.narration",
-                    "path": "gemini",
-                    "model": get_model_name(),
+                    "path": client.provider,
+                    "model": client.model,
                     "decision": decision,
                     "risk_score": risk_score,
                 },
             )
             return response
-        except Exception as exc:  # noqa: BLE001 - fall back on any Gemini error
-            logger.warning("Gemini decision narration başarısız, heuristik fallback: %s", exc)
+        except Exception as exc:  # noqa: BLE001 - fall back on any LLM error
+            logger.warning("LLM decision narration başarısız, heuristik fallback: %s", exc)
 
     logger.info(
         "decision_agent.narration",
@@ -325,7 +325,10 @@ def _narration_cache_key(
 
     blob = json.dumps(
         [
-            get_model_name(),
+            # The provider/model pair is part of the cache key so swapping
+            # OpenRouter for Gemini (or upgrading either) invalidates the
+            # narration cache cleanly.
+            _provider_model_tag(),
             decision,
             risk_score,
             fp(review),
@@ -339,8 +342,16 @@ def _narration_cache_key(
     return f"dec::u={req.userId}:p={_url_hash(req.product.url)}:{digest}"
 
 
-def _build_with_gemini(
-    client,
+def _provider_model_tag() -> str:
+    """Short tag identifying the active LLM provider+model for cache keys."""
+    client = get_llm_client()
+    if client is None:
+        return "no-llm"
+    return f"{client.provider}:{client.model}"
+
+
+def _build_with_llm(
+    client: LLMClient,
     req: AnalyzeRequest,
     decision: Decision,
     risk_score: int,
@@ -358,27 +369,15 @@ def _build_with_gemini(
 
     if narration is None:
         prompt = _build_gemini_prompt(decision, risk_score, review, price, budget, impulse)
-        response = gemini_call(
-            lambda: client.models.generate_content(
-                model=get_model_name(),
-                contents=prompt,
-                config={
-                    "system_instruction": _SYSTEM_INSTRUCTION,
-                    "response_mime_type": "application/json",
-                    "response_schema": _GeminiNarration,
-                    "temperature": 0.35,
-                },
+        narration = gemini_call(
+            lambda: client.generate_json(
+                prompt=prompt,
+                system_instruction=_SYSTEM_INSTRUCTION,
+                schema=_GeminiNarration,
+                temperature=0.35,
             ),
             label="decision_agent",
         )
-
-        parsed = getattr(response, "parsed", None) or _safe_parse(response)
-        if isinstance(parsed, dict):
-            narration = _GeminiNarration.model_validate(parsed)
-        elif isinstance(parsed, _GeminiNarration):
-            narration = parsed
-        else:
-            narration = _GeminiNarration.model_validate_json(response.text)
 
         if narration.reasoning:
             logger.info(
@@ -402,16 +401,6 @@ def _build_with_gemini(
         recommendedAction=narration.recommendedAction.strip(),
         triggeredRules=triggered_rules,
     )
-
-
-def _safe_parse(response) -> dict | None:
-    text = getattr(response, "text", None)
-    if not text:
-        return None
-    try:
-        return json.loads(text)
-    except (TypeError, ValueError):
-        return None
 
 
 # ---------- Heuristic narration (fallback) ----------

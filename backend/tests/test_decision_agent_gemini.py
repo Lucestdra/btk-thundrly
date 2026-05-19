@@ -10,7 +10,9 @@ text never affects `response.decision` because the field comes from
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, Type
+
+from pydantic import BaseModel
 
 from app.agents import decision_agent
 from app.models.schemas import (
@@ -59,25 +61,30 @@ def _agent(score: int, label: str = "test", findings=None) -> AgentResult:
     )
 
 
-class _FakeResponse:
-    def __init__(self, parsed=None, text: Optional[str] = None):
-        self.parsed = parsed
-        self.text = text or ""
+class _FakeClient:
+    """LLMClient stub — see test_review_agent_gemini for the same shape."""
 
+    provider = "gemini"
+    model = "gemini-2.5-flash"
 
-class _FakeModels:
-    def __init__(self, response: _FakeResponse):
-        self._response = response
+    def __init__(self, response_dict=None, response_text: Optional[str] = None):
+        self._response_dict = response_dict
+        self._response_text = response_text
         self.last_call = None
 
-    def generate_content(self, *, model, contents, config):
-        self.last_call = SimpleNamespace(model=model, contents=contents, config=config)
-        return self._response
-
-
-class _FakeClient:
-    def __init__(self, response: _FakeResponse):
-        self.models = _FakeModels(response)
+    def generate_json(self, *, prompt, system_instruction, schema: Type[BaseModel], temperature=0.3, model=None):
+        self.last_call = SimpleNamespace(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            schema=schema,
+            temperature=temperature,
+            model=model or self.model,
+        )
+        if self._response_dict is not None:
+            return schema.model_validate(self._response_dict)
+        if self._response_text is not None:
+            return schema.model_validate_json(self._response_text)
+        raise AssertionError("FakeClient was not given a response")
 
 
 # ---------- Gemini path: narration is used, decision is heuristic ----------
@@ -93,8 +100,8 @@ def test_uses_gemini_narration_but_keeps_heuristic_decision(monkeypatch):
         ],
         "recommendedAction": "30 saniye düşünüp tekrar bak.",
     }
-    fake_client = _FakeClient(_FakeResponse(parsed=narration))
-    monkeypatch.setattr(decision_agent, "get_client", lambda: fake_client)
+    fake_client = _FakeClient(response_dict=narration)
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: fake_client)
 
     # Heuristic with these scores yields red (price=80 alone triggers ≥70 floor).
     resp = decision_agent.run(
@@ -123,7 +130,7 @@ def test_llm_color_word_in_text_does_not_override_real_decision(monkeypatch):
         "reasons": ["a" * 10, "b" * 10],
         "recommendedAction": "Satın al",
     }
-    monkeypatch.setattr(decision_agent, "get_client", lambda: _FakeClient(_FakeResponse(parsed=rogue)))
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: _FakeClient(response_dict=rogue))
 
     resp = decision_agent.run(
         _req(),
@@ -144,7 +151,7 @@ def test_trims_excess_reasons_to_three(monkeypatch):
         "reasons": ["sebep 1", "sebep 2", "sebep 3", "sebep 4"],
         "recommendedAction": "Birkaç noktayı tekrar gözden geçir",
     }
-    monkeypatch.setattr(decision_agent, "get_client", lambda: _FakeClient(_FakeResponse(parsed=narration)))
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: _FakeClient(response_dict=narration))
 
     resp = decision_agent.run(
         _req(),
@@ -163,11 +170,13 @@ def test_trims_excess_reasons_to_three(monkeypatch):
 
 def test_falls_back_to_heuristic_narration_on_gemini_error(monkeypatch):
     class _ExplodingClient:
-        @property
-        def models(self):
+        provider = "gemini"
+        model = "gemini-2.5-flash"
+
+        def generate_json(self, **kwargs):
             raise RuntimeError("simulated outage")
 
-    monkeypatch.setattr(decision_agent, "get_client", lambda: _ExplodingClient())
+    monkeypatch.setattr(decision_agent, "get_llm_client", lambda: _ExplodingClient())
 
     resp = decision_agent.run(
         _req(),
@@ -187,8 +196,12 @@ def test_falls_back_to_heuristic_narration_on_gemini_error(monkeypatch):
 
 
 def test_falls_back_when_response_unparseable(monkeypatch):
-    bad_response = _FakeResponse(parsed=None, text="not even json {{{")
-    monkeypatch.setattr(decision_agent, "get_client", lambda: _FakeClient(bad_response))
+    # FakeClient with neither dict nor text → raises ValidationError-equivalent
+    # in the production path, which the agent catches and falls back to
+    # heuristic narration.
+    monkeypatch.setattr(
+        decision_agent, "get_llm_client", lambda: _FakeClient(response_text="not even json {{{")
+    )
 
     resp = decision_agent.run(
         _req(),

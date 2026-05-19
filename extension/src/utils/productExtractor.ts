@@ -1131,6 +1131,20 @@ function reviewSubpageUrl(host: Host, pdpUrl: string): string | null {
       }
       return u.toString();
     }
+    if (host === "amazon") {
+      // Amazon TR PDP path shapes include the ASIN as the path segment
+      // after `/dp/` or `/gp/product/`. The dedicated all-reviews page is
+      //   https://www.amazon.com.tr/product-reviews/<ASIN>/?reviewerType=all_reviews
+      // which serves a server-rendered HTML list (no React hydration), so
+      // a plain GET returns parseable markup.
+      const asin = pdpUrl.match(/\/(?:dp|gp\/product)\/([A-Z0-9]{8,14})/i)?.[1];
+      if (!asin) return null;
+      const reviews = new URL(u.origin);
+      reviews.pathname = `/product-reviews/${asin.toUpperCase()}/`;
+      reviews.searchParams.set("reviewerType", "all_reviews");
+      reviews.searchParams.set("sortBy", "recent");
+      return reviews.toString();
+    }
   } catch {
     /* fall through */
   }
@@ -1224,6 +1238,24 @@ function sanitizeProduct(p: Product): Product {
 
   // Optional numeric fields — drop if out of range so the field is omitted.
   clean.originalPrice = finiteOrUndef(clean.originalPrice, 0, 9_999_999);
+
+  // originalPrice must be ≥ price by definition (it's the pre-discount
+  // value). When the extractor picks them up from different DOM regions
+  // they sometimes swap — e.g. on Amazon TR the "Liste fiyatı"
+  // strike-through is sometimes the *unit* price of a multi-pack while
+  // the visible price is the bundle total. We drop a smaller-than-price
+  // originalPrice rather than ship a misleading "X% indirim" claim to
+  // the price agent.
+  if (
+    clean.originalPrice !== undefined &&
+    clean.price > 0 &&
+    clean.originalPrice < clean.price
+  ) {
+    console.warn(
+      `[Thundrly/extract] originalPrice ₺${clean.originalPrice} < price ₺${clean.price}; dropping originalPrice to avoid bogus discount claim`,
+    );
+    clean.originalPrice = undefined;
+  }
   // Schema clamps rating to [0,5]. If a parser misbehaved, drop rather
   // than guess a meaningless value.
   clean.rating = finiteOrUndef(clean.rating, 0, 5);

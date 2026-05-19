@@ -212,6 +212,11 @@ async function fetchWithRetry(url: string, attempts = 2): Promise<Response | nul
           accept: "text/html,application/xhtml+xml,application/xml;q=0.9",
           "accept-language": "tr-TR,tr;q=0.9,en;q=0.8",
         },
+        // Amazon's review subpage paginates differently for signed-in
+        // users; passing the page's first-party cookies (allowed because
+        // the host is in our manifest host_permissions) gives the same
+        // view the user sees in their tab.
+        credentials: "include",
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -231,11 +236,11 @@ async function fetchWithRetry(url: string, attempts = 2): Promise<Response | nul
 }
 
 async function fetchAndParseReviews(url: string, host: Host): Promise<Review[]> {
-  // Trendyol + Hepsiburada paginate their review subpages; walk them up
-  // to REVIEW_PAGE_LIMIT or REVIEW_PAGE_CAP, whichever comes first.
-  // Stop early on an empty page (end of stream) so we don't burn time
-  // on dead requests.
-  if (host !== "trendyol" && host !== "hepsiburada") {
+  // Trendyol + Hepsiburada + Amazon paginate their review subpages; walk
+  // them up to REVIEW_PAGE_LIMIT or REVIEW_PAGE_CAP, whichever comes
+  // first. Stop early on an empty page (end of stream) so we don't burn
+  // time on dead requests.
+  if (host !== "trendyol" && host !== "hepsiburada" && host !== "amazon") {
     console.log(`[Thundrly/bg] /yorumlar fetch: unsupported host ${host}`);
     return [];
   }
@@ -255,7 +260,10 @@ async function fetchAndParseReviews(url: string, host: Host): Promise<Review[]> 
     console.log(
       `[Thundrly/bg] page ${page}: HTTP ${r.status}, ${html.length} bytes, ${Date.now() - pageStart}ms`,
     );
-    const batch = host === "trendyol" ? parseTrendyolReviews(html) : parseHepsiburadaReviews(html);
+    const batch =
+      host === "trendyol" ? parseTrendyolReviews(html) :
+      host === "hepsiburada" ? parseHepsiburadaReviews(html) :
+      parseAmazonReviews(html);
     console.log(`[Thundrly/bg] page ${page}: parser yielded ${batch.length} reviews`);
     if (batch.length === 0) break;
     let added = 0;
@@ -277,7 +285,10 @@ function appendReviewPageParam(url: string, host: Host, page: number): string {
   if (page <= 1) return url; // first page is the canonical URL
   try {
     const u = new URL(url);
-    const param = host === "trendyol" ? "page" : "sayfa";
+    const param =
+      host === "trendyol" ? "page" :
+      host === "amazon" ? "pageNumber" :
+      "sayfa";
     u.searchParams.set(param, String(page));
     return u.toString();
   } catch {
@@ -476,6 +487,80 @@ function collectHepsiburadaReviewsFromTree(node: unknown, out: Review[], depth =
     }
   }
   for (const v of Object.values(obj)) collectHepsiburadaReviewsFromTree(v, out, depth + 1);
+}
+
+// ---------- Amazon TR review parsing ----------
+//
+// Amazon serves a static HTML view at `/product-reviews/<ASIN>/...` —
+// no React hydration, no JSON island. Reviews live in repeated
+// `<div data-hook="review">` cards with stable child-element hooks.
+// We rely on those hooks rather than CSS classes because Amazon's
+// minified class names drift weekly.
+function parseAmazonReviews(html: string): Review[] {
+  const out: Review[] = [];
+  const cardRe = /<div[^>]+data-hook="review"[^>]*>([\s\S]*?)<\/div>\s*<\/div>\s*<\/div>/g;
+  let m: RegExpExecArray | null;
+  while ((m = cardRe.exec(html)) !== null) {
+    const card = m[1];
+
+    // Rating: appears as <i data-hook="review-star-rating">…<span class="a-icon-alt">4,0 üzerinden 5,0 yıldız</span>…</i>
+    // We pull the first numeric in the alt text and clamp to 0..5.
+    const ratingMatch = card.match(
+      /data-hook="(?:review-star-rating|cmps-review-star-rating)"[^>]*>([\s\S]*?)<\/i>/,
+    );
+    let rating = 0;
+    if (ratingMatch) {
+      const alt = stripTags(ratingMatch[1]);
+      const firstNum = alt.match(/(\d+(?:[.,]\d+)?)/);
+      if (firstNum) {
+        const n = parseFloat(firstNum[1].replace(",", "."));
+        if (Number.isFinite(n) && n >= 0 && n <= 5) rating = n;
+      }
+    }
+    if (rating === 0) continue;
+
+    // Body. data-hook="review-body" wraps a <span> with the text.
+    const bodyMatch = card.match(
+      /data-hook="review-body"[^>]*>([\s\S]*?)<\/span>\s*<\/div>/,
+    ) || card.match(/data-hook="review-body"[^>]*>([\s\S]*?)<\/div>/);
+    const text = stripTags(bodyMatch?.[1] || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!text) continue;
+
+    const dateMatch = card.match(/data-hook="review-date"[^>]*>([\s\S]*?)<\/span>/);
+    const date = stripTags(dateMatch?.[1] || "").trim();
+
+    const authorMatch = card.match(
+      /class="a-profile-name"[^>]*>([\s\S]*?)<\/span>/,
+    );
+    const author = stripTags(authorMatch?.[1] || "").trim() || undefined;
+
+    // Amazon labels verified purchases with data-hook="avp-badge".
+    const verified = /data-hook="avp-badge"/.test(card) || undefined;
+
+    // "12 kişi bu yorumu faydalı buldu" — pull the leading number.
+    const helpfulMatch = card.match(
+      /data-hook="helpful-vote-statement"[^>]*>([\s\S]*?)<\/span>/,
+    );
+    let helpfulCount: number | undefined;
+    if (helpfulMatch) {
+      const txt = stripTags(helpfulMatch[1]);
+      const n = parseInt((txt.match(/\d+/) || [""])[0], 10);
+      if (Number.isFinite(n) && n >= 0) helpfulCount = n;
+    }
+
+    out.push({
+      rating,
+      text: text.slice(0, 2048),
+      date,
+      author,
+      verifiedPurchase: verified,
+      helpfulCount,
+    });
+    if (out.length >= REVIEW_PAGE_CAP) break;
+  }
+  return out;
 }
 
 function stripTags(s: string): string {

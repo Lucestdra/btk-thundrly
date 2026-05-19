@@ -1,19 +1,19 @@
-"""Tests for the Gemini-backed `review_agent` dispatch.
+"""Tests for the LLM-backed `review_agent` dispatch.
 
-We don't need a real Gemini API key — we mock `get_client` so the dispatch
-goes through the LLM path, and stub `client.models.generate_content` to
-return a canned response. This verifies:
+We don't need a real Gemini API key — we mock `get_llm_client` so the
+dispatch goes through the LLM path, and stub the returned client's
+`generate_json` to hand back a canned Pydantic model. This verifies:
 
-  - When a client is available, `run()` uses the Gemini path and parses the
-    structured response into an `AgentResult`.
-  - When the Gemini call raises, `run()` silently falls back to heuristics
+  - When a client is available, `run()` uses the LLM path and parses
+    the structured response into an `AgentResult`.
+  - When the LLM call raises, `run()` silently falls back to heuristics
     (so production never errors out on an LLM hiccup).
 """
 
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import Optional
+from typing import Optional, Type
 
 from pydantic import BaseModel
 
@@ -57,27 +57,37 @@ def _build_req_with_reviews() -> AnalyzeRequest:
     )
 
 
-class _FakeResponse:
-    """Mimics the surface of `genai.GenerateContentResponse` we depend on."""
+class _FakeClient:
+    """Mimics the LLMClient surface used by review_agent.
 
-    def __init__(self, parsed=None, text: Optional[str] = None):
-        self.parsed = parsed
-        self.text = text or ""
+    Captures the last call so tests can assert on the prompt + schema
+    that flowed through. ``response_dict`` is what the LLM "returned" —
+    we validate it against the requested schema, same as production.
+    ``response_text`` is an alternative: a JSON string that hits the
+    same code path as a model that didn't pre-parse.
+    """
 
+    provider = "gemini"
+    model = "gemini-2.5-flash"
 
-class _FakeModels:
-    def __init__(self, response: _FakeResponse):
-        self._response = response
+    def __init__(self, response_dict=None, response_text: Optional[str] = None):
+        self._response_dict = response_dict
+        self._response_text = response_text
         self.last_call = None  # for assertions
 
-    def generate_content(self, *, model, contents, config):
-        self.last_call = SimpleNamespace(model=model, contents=contents, config=config)
-        return self._response
-
-
-class _FakeClient:
-    def __init__(self, response: _FakeResponse):
-        self.models = _FakeModels(response)
+    def generate_json(self, *, prompt, system_instruction, schema: Type[BaseModel], temperature=0.3, model=None):
+        self.last_call = SimpleNamespace(
+            prompt=prompt,
+            system_instruction=system_instruction,
+            schema=schema,
+            temperature=temperature,
+            model=model or self.model,
+        )
+        if self._response_dict is not None:
+            return schema.model_validate(self._response_dict)
+        if self._response_text is not None:
+            return schema.model_validate_json(self._response_text)
+        raise AssertionError("FakeClient was not given a response")
 
 
 # ---------- Gemini path: structured response is parsed correctly ----------
@@ -92,8 +102,8 @@ def test_run_uses_gemini_when_client_available(monkeypatch):
             {"severity": "warn", "message": "5 yıldız + kısa metin yoğunluğu yüksek."},
         ],
     }
-    fake_client = _FakeClient(_FakeResponse(parsed=parsed))
-    monkeypatch.setattr(review_agent, "get_client", lambda: fake_client)
+    fake_client = _FakeClient(response_dict=parsed)
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: fake_client)
 
     result = review_agent.run(_build_req_with_reviews())
 
@@ -107,10 +117,10 @@ def test_run_uses_gemini_when_client_available(monkeypatch):
     assert "Güven skoru" in result.findings[-1].message
 
     # The prompt was constructed and sent through.
-    call = fake_client.models.last_call
+    call = fake_client.last_call
     assert call.model.startswith("gemini-")
-    assert "Aşağıdaki Türk e-ticaret yorumlarını" in call.contents
-    assert call.config["response_mime_type"] == "application/json"
+    assert "Aşağıdaki Türk e-ticaret yorumlarını" in call.prompt
+    assert call.schema is not None
 
 
 # ---------- Gemini path: JSON-string fallback parsing ----------
@@ -121,8 +131,8 @@ def test_run_parses_text_when_parsed_field_missing(monkeypatch):
         '{"score": 22, "label": "Güvenilir", '
         '"findings": [{"severity": "info", "message": "Yorumlar detaylı ve dağınık tarihli."}]}'
     )
-    fake_client = _FakeClient(_FakeResponse(parsed=None, text=json_text))
-    monkeypatch.setattr(review_agent, "get_client", lambda: fake_client)
+    fake_client = _FakeClient(response_text=json_text)
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: fake_client)
 
     result = review_agent.run(_build_req_with_reviews())
 
@@ -136,11 +146,13 @@ def test_run_parses_text_when_parsed_field_missing(monkeypatch):
 
 def test_run_falls_back_to_heuristics_on_gemini_error(monkeypatch):
     class _ExplodingClient:
-        @property
-        def models(self):  # accessed by _run_with_gemini
+        provider = "gemini"
+        model = "gemini-2.5-flash"
+
+        def generate_json(self, **kwargs):
             raise RuntimeError("simulated Gemini outage")
 
-    monkeypatch.setattr(review_agent, "get_client", lambda: _ExplodingClient())
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: _ExplodingClient())
 
     result = review_agent.run(_build_req_with_reviews())
 
@@ -151,19 +163,21 @@ def test_run_falls_back_to_heuristics_on_gemini_error(monkeypatch):
     assert len(result.findings) >= 1
 
 
-# ---------- Fallback path: empty reviews shortcut never calls Gemini ----------
+# ---------- Fallback path: empty reviews shortcut never calls LLM ----------
 
 
 def test_run_skips_gemini_when_no_reviews(monkeypatch):
     called = {"flag": False}
 
     class _MarkerClient:
-        @property
-        def models(self):
+        provider = "gemini"
+        model = "gemini-2.5-flash"
+
+        def generate_json(self, **kwargs):
             called["flag"] = True
             raise AssertionError("should not be reached")
 
-    monkeypatch.setattr(review_agent, "get_client", lambda: _MarkerClient())
+    monkeypatch.setattr(review_agent, "get_llm_client", lambda: _MarkerClient())
 
     req = _build_req_with_reviews().model_copy(update={"reviews": []})
     result = review_agent.run(req)

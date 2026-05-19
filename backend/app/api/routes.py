@@ -429,14 +429,22 @@ def post_purchase(
     ),
 )
 def health() -> dict:
-    from app.agents._gemini_client import get_client, get_model_name
+    from app.agents._llm import get_provider_info
 
-    gemini_ready = get_client() is not None
+    info = get_provider_info()
+    # Backwards-compat: callers (extension popup ≤0.2) read the
+    # ``gemini`` boolean. We keep it true for any working LLM provider
+    # so the popup's existing "Gemini açık" dot keeps the right color
+    # regardless of which provider is actually serving the requests.
     return {
         "status": "ok",
         "service": "thundrly-backend",
-        "gemini": gemini_ready,
-        "geminiModel": get_model_name() if gemini_ready else None,
+        "llmProvider": info["provider"],
+        "llmModel": info["model"],
+        "llmReady": info["ready"],
+        # Legacy fields:
+        "gemini": info["ready"],
+        "geminiModel": info["model"] if info["ready"] else None,
     }
 
 
