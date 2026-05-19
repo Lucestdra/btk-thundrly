@@ -422,6 +422,100 @@ export function extractLegalLowestPrice30d(root: ParentNode = document): number 
   return undefined;
 }
 
+// ---------- Strategy 5.5: Trendyol __NEXT_DATA__ canonical price ----------
+
+/**
+ * Walk Trendyol's `__NEXT_DATA__` JSON tree for the canonical product
+ * price. This is the most reliable source for Trendyol — the page renders
+ * from this exact JSON, so whatever number we pull from here is what the
+ * customer actually sees on the buy button.
+ *
+ * Why we need it: Trendyol's CSS-rendered "₺ 76,84" on the page is often
+ * the monthly installment (e.g. "4 x ₺ 76,84"), not the total. The
+ * regex sweep can confuse the two. The `__NEXT_DATA__` blob exposes the
+ * total separately, named one of {`discountedPrice`, `sellingPrice`,
+ * `price`} on a Product object.
+ *
+ * Returns { price, originalPrice } from the first product node we hit
+ * with at least a `discountedPrice` or `sellingPrice` field. Either may
+ * be undefined if absent.
+ */
+function readTrendyolNextDataPrice(): { price?: number; originalPrice?: number } {
+  const node = document.querySelector<HTMLScriptElement>("script#__NEXT_DATA__");
+  if (!node?.textContent) return {};
+  try {
+    const data = JSON.parse(node.textContent);
+    const found = _findTrendyolPriceNode(data, 0);
+    if (!found) return {};
+    return found;
+  } catch {
+    return {};
+  }
+}
+
+function _coerceNum(v: unknown): number | undefined {
+  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
+  if (typeof v === "string") return parsePrice(v);
+  if (v && typeof v === "object") {
+    // Trendyol sometimes wraps as { value: 307.5, currency: "TRY" } or
+    // { discountedPrice: { value: ... } }.
+    const obj = v as Record<string, unknown>;
+    if ("value" in obj) return _coerceNum(obj.value);
+    if ("amount" in obj) return _coerceNum(obj.amount);
+  }
+  return undefined;
+}
+
+function _findTrendyolPriceNode(
+  node: unknown,
+  depth: number,
+): { price?: number; originalPrice?: number } | null {
+  if (depth > 14 || !node) return null;
+  if (Array.isArray(node)) {
+    for (const item of node) {
+      const hit = _findTrendyolPriceNode(item, depth + 1);
+      if (hit) return hit;
+    }
+    return null;
+  }
+  if (typeof node !== "object") return null;
+  const obj = node as Record<string, unknown>;
+
+  // Trendyol's product node usually has BOTH a "price" subtree AND
+  // canonical fields like productGroupId / contentId. We accept either
+  // shape so the heuristic is tolerant of A/B variants.
+  const directDiscounted = _coerceNum(obj.discountedPrice);
+  const directSelling = _coerceNum(obj.sellingPrice);
+  const directOriginal = _coerceNum(obj.originalPrice);
+
+  // Some payloads embed a nested "price" container.
+  let nestedDiscounted: number | undefined;
+  let nestedSelling: number | undefined;
+  let nestedOriginal: number | undefined;
+  if (obj.price && typeof obj.price === "object") {
+    const p = obj.price as Record<string, unknown>;
+    nestedDiscounted = _coerceNum(p.discountedPrice);
+    nestedSelling = _coerceNum(p.sellingPrice);
+    nestedOriginal = _coerceNum(p.originalPrice);
+  }
+
+  const price = directDiscounted ?? directSelling ?? nestedDiscounted ?? nestedSelling;
+  const originalPrice = directOriginal ?? nestedOriginal;
+  // Sanity: Trendyol typical price > ₺20 (installments are usually much
+  // lower per-month). If we found a number but it's tiny AND the surrounding
+  // node has installment markers, skip.
+  if (price !== undefined && price >= 20) {
+    return { price, originalPrice };
+  }
+
+  // Recurse.
+  for (const v of Object.values(obj)) {
+    const hit = _findTrendyolPriceNode(v, depth + 1);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 // ---------- Strategy 6: last-resort regex sweep ----------
 
 /**
@@ -433,6 +527,10 @@ export function extractLegalLowestPrice30d(root: ParentNode = document): number 
  * Why largest: pages often show monthly-installment offers like
  * "12 x ₺83" alongside the real "₺990" total; the real total is almost
  * always the largest figure in the buy-button area.
+ *
+ * Installment filter: matches preceded by `<n> x ` or followed by `/ay`
+ * are dropped — Trendyol's PDP renders "4 x ₺76,84" prominently which
+ * the old sweep was mistaking for the actual price.
  *
  * The search container is the buy button's nearest ancestor with at
  * least 4 children — typically the product-info column. Falls back to
@@ -464,11 +562,19 @@ function regexSweepPrice(): number | undefined {
   while ((m = pattern.exec(text)) !== null) {
     const raw = m[1] || m[2];
     const parsed = parsePrice(raw);
-    // Real product prices: > ₺5 (filters out shipping fees, rating numbers).
-    // Cap at ₺500k to drop obvious junk (Trendyol shows campaign totals etc).
-    if (parsed !== undefined && parsed >= 5 && parsed <= 500_000) {
-      candidates.push(parsed);
-    }
+    if (parsed === undefined || parsed < 5 || parsed > 500_000) continue;
+
+    // Installment guards: drop matches that the context says are per-
+    // installment, not totals.
+    const start = m.index;
+    const end = start + m[0].length;
+    const before = text.slice(Math.max(0, start - 14), start).toLowerCase();
+    const after = text.slice(end, Math.min(text.length, end + 14)).toLowerCase();
+    const installmentBefore = /\b\d+\s*x\s*$/i.test(before) || /taksit/i.test(before);
+    const installmentAfter = /^\s*\/\s*ay\b/.test(after) || /^\s*ay\b/.test(after);
+    if (installmentBefore || installmentAfter) continue;
+
+    candidates.push(parsed);
   }
   if (candidates.length === 0) return undefined;
 
@@ -504,16 +610,56 @@ export function extractProductBasics(host: Host): Partial<Product> {
   const micro = readFromMicrodata();
   const plat = readFromPlatform(host);
   const og = readFromOg();
-  if (_debugEnabled()) {
-    _dlog("price extraction layers:", {
-      jsonLd: ld.price,
-      microdata: micro.price,
-      platformSelector: plat.price,
-      ogMeta: og.price,
-    });
+
+  // Trendyol-specific canonical price probe — pulls from __NEXT_DATA__
+  // which is what the page itself renders from. Inserted between
+  // JSON-LD and the platform-selector layer so it can correct
+  // installment values that occasionally show up in JSON-LD/microdata.
+  const next: Partial<Product> = {};
+  if (host === "trendyol") {
+    const tn = readTrendyolNextDataPrice();
+    if (tn.price !== undefined) next.price = tn.price;
+    if (tn.originalPrice !== undefined) next.originalPrice = tn.originalPrice;
   }
 
-  const merged = mergeFields(ld, micro, plat, og);
+  // ALWAYS log each layer's price so the next bad screenshot is
+  // trivial to diagnose. Tagged so it groups with the other Thundrly
+  // lines in the console.
+  console.log("[Thundrly/extract] per-layer prices:", {
+    jsonLd: ld.price,
+    microdata: micro.price,
+    nextData: next.price,
+    platformSelector: plat.price,
+    ogMeta: og.price,
+  });
+
+  // Priority: JSON-LD → __NEXT_DATA__ → microdata → platform → og.
+  // Note JSON-LD wins over __NEXT_DATA__ because schema.org is usually
+  // the cleanest signal. We *override* JSON-LD only when JSON-LD is
+  // suspicious (see installment guard below).
+  let merged = mergeFields(ld, next, micro, plat, og);
+
+  // Installment guard: if the chosen `price` is suspiciously small
+  // compared to OTHER layers' candidates, the smaller one is likely
+  // an installment-per-month and we should swap to the larger total.
+  //
+  // Threshold 2.5× = caller is claiming a 60% discount, which is beyond
+  // the typical clearance range (5–50%) and well within typical
+  // installment-vs-total ratios (4×, 12×). Below 2.5× we trust the
+  // priority chain.
+  const allPrices = [ld.price, next.price, micro.price, plat.price, og.price]
+    .filter((p): p is number => typeof p === "number" && p > 0);
+  if (merged.price && allPrices.length >= 2) {
+    const maxCandidate = Math.max(...allPrices);
+    if (maxCandidate >= merged.price * 2.5) {
+      const oldPrice = merged.price;
+      merged = { ...merged, price: maxCandidate };
+      console.warn(
+        `[Thundrly/extract] installment guard: chose ₺${maxCandidate} over ₺${oldPrice} ` +
+        `(gap ${(maxCandidate / oldPrice).toFixed(1)}×). Layers: ${JSON.stringify(allPrices)}`,
+      );
+    }
+  }
 
   // Last resort: regex-scan for TL/₺ near the buy button when the
   // structured strategies all returned a missing/zero price.
@@ -521,15 +667,16 @@ export function extractProductBasics(host: Host): Partial<Product> {
     const sweep = regexSweepPrice();
     if (sweep !== undefined) {
       merged.price = sweep;
-      _dlog(`price: structured layers all empty; regex-sweep fallback found ₺${sweep}`);
+      console.log(`[Thundrly/extract] regex-sweep fallback found ₺${sweep}`);
     }
   } else {
-    _dlog(`price: ₺${merged.price} (from ${
+    const source =
       ld.price === merged.price ? "JSON-LD" :
+      next.price === merged.price ? "__NEXT_DATA__" :
       micro.price === merged.price ? "microdata" :
-      plat.price === merged.price ? "platform selectors" :
-      og.price === merged.price ? "og:meta" : "merged"
-    })`);
+      plat.price === merged.price ? "platform-selectors" :
+      og.price === merged.price ? "og:meta" : "merged/installment-guard";
+    console.log(`[Thundrly/extract] price ₺${merged.price} via ${source}`);
   }
 
   return merged;

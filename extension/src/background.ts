@@ -309,42 +309,89 @@ function parseTrendyolReviews(html: string): Review[] {
 }
 
 function collectTrendyolReviewsFromTree(node: unknown, out: Review[], depth = 0): void {
-  if (depth > 12 || out.length >= REVIEW_PAGE_CAP) return;
+  if (depth > 14 || out.length >= REVIEW_PAGE_CAP) return;
   if (Array.isArray(node)) {
     for (const item of node) collectTrendyolReviewsFromTree(item, out, depth + 1);
     return;
   }
   if (!node || typeof node !== "object") return;
   const obj = node as Record<string, unknown>;
-  // Trendyol's review objects look like { comment, rate, lastModifiedDate, ...}
-  if (typeof obj.comment === "string" && typeof obj.rate === "number") {
-    const text = String(obj.comment).trim();
+
+  // Trendyol's review payload has drifted across A/B variants. Accept any
+  // object that carries both:
+  //   - a textual review body in one of {comment, commentText, comment_text,
+  //     text, reviewText, content, message, review}
+  //   - a numeric rating in one of {rate, rating, ratingValue, star, stars,
+  //     starCount, point, productRating}
+  // The defensive list is the cheapest way to survive their next rename.
+  const textCandidate =
+    _firstString(obj, [
+      "comment",
+      "commentText",
+      "comment_text",
+      "text",
+      "reviewText",
+      "content",
+      "message",
+      "review",
+    ]);
+  const ratingCandidate = _firstNumber(obj, [
+    "rate",
+    "rating",
+    "ratingValue",
+    "star",
+    "stars",
+    "starCount",
+    "point",
+    "productRating",
+  ]);
+  if (textCandidate && ratingCandidate !== undefined) {
+    const text = textCandidate.trim();
     if (text) {
-      const rating = Math.max(0, Math.min(5, Number(obj.rate)));
-      const date = String(obj.lastModifiedDate ?? obj.commentDateISOtype ?? "").slice(0, 10);
-      // Author: stored under userFullName, commentOwnerName, or userName.
+      const rating = Math.max(0, Math.min(5, ratingCandidate));
+      const date = String(
+        obj.lastModifiedDate ?? obj.commentDateISOtype ?? obj.createdAt ?? obj.date ?? "",
+      ).slice(0, 10);
       const author =
-        (typeof obj.userFullName === "string" && obj.userFullName) ||
-        (typeof obj.commentOwnerName === "string" && obj.commentOwnerName) ||
-        (typeof obj.userName === "string" && obj.userName) ||
-        undefined;
-      // Verified-purchase: Trendyol exposes a few boolean badges; any of
-      // them being true is sufficient confirmation.
+        _firstString(obj, [
+          "userFullName",
+          "commentOwnerName",
+          "userName",
+          "fullName",
+          "customerName",
+        ]) || undefined;
       const verifiedPurchase =
         Boolean(obj.commentOwnerSeller) ||
         Boolean(obj.isVerifiedPurchase) ||
         Boolean(obj.verifiedPurchase) ||
+        Boolean(obj.purchased) ||
         undefined;
       const helpfulCount =
-        typeof obj.likeCount === "number"
-          ? Math.max(0, Math.floor(obj.likeCount))
-          : typeof obj.helpfulCount === "number"
-            ? Math.max(0, Math.floor(obj.helpfulCount))
-            : undefined;
-      out.push({ rating, text, date, author, verifiedPurchase, helpfulCount });
+        _firstNumber(obj, ["likeCount", "helpfulCount", "usefulCount"]) ?? undefined;
+      out.push({ rating, text, date, author, verifiedPurchase, helpfulCount: helpfulCount ?? undefined });
     }
   }
   for (const v of Object.values(obj)) collectTrendyolReviewsFromTree(v, out, depth + 1);
+}
+
+function _firstString(obj: Record<string, unknown>, keys: string[]): string | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "string" && v.length > 0) return v;
+  }
+  return undefined;
+}
+
+function _firstNumber(obj: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const k of keys) {
+    const v = obj[k];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const n = parseFloat(v.replace(",", "."));
+      if (Number.isFinite(n)) return n;
+    }
+  }
+  return undefined;
 }
 
 function parseHepsiburadaReviews(html: string): Review[] {

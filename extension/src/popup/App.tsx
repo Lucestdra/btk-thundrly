@@ -180,6 +180,9 @@ export function App() {
         categorySpent: 0,
         currency: "TRY",
       };
+      console.log(
+        `[Thundrly/popup] saving global budget · userId=${userId} · monthlyLimit=${monthly}`,
+      );
       const rg = await fetch(
         `${USER_BUDGET_GLOBAL_URL}?userId=${encodeURIComponent(userId)}`,
         {
@@ -189,6 +192,15 @@ export function App() {
         },
       );
       if (!rg.ok) throw new Error(`Aylık genel bütçe kaydedilemedi: HTTP ${rg.status}`);
+      // Echo the persisted row so the user can confirm the round-trip in
+      // the console — debugging "I saved but agent still says Bütçe Verisi
+      // Yok" was previously impossible without backend access.
+      try {
+        const body = await rg.clone().json();
+        console.log("[Thundrly/popup] global budget saved · backend ack:", body);
+      } catch {
+        /* body may not be JSON in some error variants — already caught above */
+      }
 
       // Per-category rows are optional power-user data — only PUT the
       // ones the user actually configured. Sequential so the first
@@ -357,12 +369,20 @@ export function App() {
         Ayın başında otomatik sıfırlanır.
       </p>
 
-      <DiagnosticsRow userId={userId} health={health} />
+      <DiagnosticsRow userId={userId} health={health} summary={summary} />
     </div>
   );
 }
 
-function DiagnosticsRow({ userId, health }: { userId: string | null; health: HealthStatus | null }) {
+function DiagnosticsRow({
+  userId,
+  health,
+  summary,
+}: {
+  userId: string | null;
+  health: HealthStatus | null;
+  summary: BudgetSummary | null;
+}) {
   // Show a short installId fingerprint + backend/Gemini status so the user
   // can immediately spot two of the most common misconfigurations:
   //   - popup saving budget under a different installId than the content
@@ -377,11 +397,22 @@ function DiagnosticsRow({ userId, health }: { userId: string | null; health: Hea
     else if (health.gemini) { backendDot = "ok"; backendLabel = `Gemini açık · ${health.geminiModel || ""}`; }
     else { backendDot = "warn"; backendLabel = "Sunucu açık · Gemini KAPALI (heuristik mod)"; }
   }
+  // Surface the actual persisted monthly limit the backend returned on
+  // last refresh. If it's 0 here even though the user "saved" a budget,
+  // the PUT didn't land on this userId — most likely an installId
+  // mismatch with the content-script's analyze request.
+  const persistedLine =
+    summary && summary.monthlyLimit > 0
+      ? `Kayıtlı: ₺${summary.monthlyLimit.toLocaleString("tr-TR")} / ay`
+      : "Kayıtlı bütçe yok";
   return (
-    <div className="pop-diag" title={userId ?? undefined}>
-      <span className={`pop-diag-dot pop-diag-${backendDot}`} />
-      <span className="pop-diag-label">{backendLabel}</span>
-      <span className="pop-diag-id">ID·{idTag}</span>
+    <div className="pop-diag-wrap" title={userId ?? undefined}>
+      <div className="pop-diag">
+        <span className={`pop-diag-dot pop-diag-${backendDot}`} />
+        <span className="pop-diag-label">{backendLabel}</span>
+        <span className="pop-diag-id">ID·{idTag}</span>
+      </div>
+      <div className="pop-diag-sub">{persistedLine}</div>
     </div>
   );
 }

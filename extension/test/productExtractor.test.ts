@@ -163,15 +163,33 @@ describe("extractProductBasics — platform selectors", () => {
 
 describe("extractProductBasics — priority chain", () => {
   it("JSON-LD price wins over platform selector when both present", () => {
+    // Use realistic discount-shaped numbers (≤2.5× gap) so the
+    // installment-guard heuristic does not fire here. The contract under
+    // test is "JSON-LD priority", not "always pick the larger one".
     document.head.innerHTML = `
       <script type="application/ld+json">
-        ${JSON.stringify({ "@type": "Product", name: "From LD", offers: { price: "111" } })}
+        ${JSON.stringify({ "@type": "Product", name: "From LD", offers: { price: "600" } })}
       </script>
     `;
     document.body.innerHTML = `<div class="prc-dsc">999 TL</div>`;
 
     const out = extractProductBasics("trendyol");
-    expect(out.price).toBe(111); // JSON-LD wins
+    expect(out.price).toBe(600); // JSON-LD wins
+  });
+
+  it("installment guard: when JSON-LD price is ≥2.5× smaller than other layers, swap to the larger total", () => {
+    // Real-world repro: Trendyol's JSON-LD has been observed reporting
+    // the per-installment value (₺76.84) while the page DOM shows the
+    // ₺307.36 total. The guard should detect the gap and swap.
+    document.head.innerHTML = `
+      <script type="application/ld+json">
+        ${JSON.stringify({ "@type": "Product", name: "Şort", offers: { price: "76.84" } })}
+      </script>
+    `;
+    document.body.innerHTML = `<div class="prc-dsc">307,36 TL</div>`;
+
+    const out = extractProductBasics("trendyol");
+    expect(out.price).toBe(307.36);
   });
 
   it("platform selector fills originalPrice that JSON-LD doesn't carry", () => {
