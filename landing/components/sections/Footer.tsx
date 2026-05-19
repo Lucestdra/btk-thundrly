@@ -13,16 +13,13 @@ const cols = [
   {
     title: "Kaynaklar",
     links: [
-      { label: "Mimari", href: "../docs/architecture.md" },
-      { label: "API Kontratı", href: "../docs/api-contract.md" },
-      { label: "Yol Haritası", href: "../docs/mvp-roadmap.md" },
-      { label: "Ürün Vizyonu", href: "../docs/product-vision.md" },
+      { label: "Mimari", href: "/mimari" },
     ],
   },
   {
     title: "Geliştirici",
     links: [
-      { label: "GitHub", href: "#" },
+      { label: "GitHub", href: "https://github.com/Lucestdra/btk-thundrly.git" },
       { label: "İletişim", href: "#" },
     ],
   },
@@ -45,33 +42,36 @@ export function Footer() {
               tasarlanmış AI alışveriş asistanı.
             </p>
           </div>
-          {cols.map((c) => (
-            <div key={c.title} className="md:col-span-2">
-              <div className="kicker mb-4">{c.title}</div>
-              <ul className="space-y-2.5">
-                {c.links.map((l) => (
-                  <li key={l.label}>
-                    <a
-                      href={l.href}
-                      className="text-[14px] text-ink-soft hover:text-ink transition-colors"
-                    >
-                      {l.label}
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
+          {cols.map((c) => {
+            const isExternal = (href: string) => /^https?:\/\//.test(href);
+            return (
+              <div key={c.title} className="md:col-span-2">
+                <div className="kicker mb-4">{c.title}</div>
+                <ul className="space-y-2.5">
+                  {c.links.map((l) => (
+                    <li key={l.label}>
+                      <a
+                        href={l.href}
+                        {...(isExternal(l.href)
+                          ? { target: "_blank", rel: "noopener noreferrer" }
+                          : {})}
+                        className="text-[14px] text-ink-soft hover:text-ink transition-colors"
+                      >
+                        {l.label}
+                      </a>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            );
+          })}
         </div>
 
         <div className="hairline mb-6" />
 
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-3">
           <div className="text-[12px] text-ink-muted">
-            © {new Date().getFullYear()} Thundrly — MVP / Demo. Sentetik verilerle çalışır.
-          </div>
-          <div className="text-[12px] text-ink-muted">
-            Türkçe arayüz · Manifest V3 · LangGraph
+            © {new Date().getFullYear()} Thundrly
           </div>
         </div>
       </Container>

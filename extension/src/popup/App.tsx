@@ -42,6 +42,7 @@ interface EditableCategory extends CategoryBudget {
 
 // Common Turkish e-commerce categories — used as quick-add suggestions.
 const SUGGESTED_CATEGORIES = ["Giyim", "Elektronik", "Market", "Kitap", "Ev", "Kozmetik", "Spor"];
+const BUDGET_SETUP_REQUEST_KEY = "thundrly:budget-setup-requested";
 
 function formatTRY(amount: number): string {
   return new Intl.NumberFormat("tr-TR", {
@@ -72,7 +73,8 @@ function monthLabel(periodStartIso: string): string {
 }
 
 export function App() {
-  const setupMode = useMemo(() => new URLSearchParams(location.search).get("setup") === "1", []);
+  const setupPageMode = useMemo(() => new URLSearchParams(location.search).get("setup") === "1", []);
+  const [setupMode, setSetupMode] = useState(setupPageMode);
   const [userId, setUserId] = useState<string | null>(null);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
   const [monthlyLimit, setMonthlyLimit] = useState<string>("");
@@ -102,6 +104,11 @@ export function App() {
 
   useEffect(() => {
     (async () => {
+      const setupFlag = await chrome.storage.local.get(BUDGET_SETUP_REQUEST_KEY);
+      if (setupFlag?.[BUDGET_SETUP_REQUEST_KEY]) {
+        setSetupMode(true);
+        await chrome.storage.local.remove(BUDGET_SETUP_REQUEST_KEY);
+      }
       const uid = await getInstallId();
       setUserId(uid);
       // Logged on every popup open so the user can match this against the
@@ -119,9 +126,9 @@ export function App() {
   }, [loading, setupMode]);
 
   useEffect(() => {
-    document.documentElement.toggleAttribute("data-thundrly-setup", setupMode);
-    return () => document.documentElement.removeAttribute("data-thundrly-setup");
-  }, [setupMode]);
+    document.documentElement.toggleAttribute("data-thundrly-setup-page", setupPageMode);
+    return () => document.documentElement.removeAttribute("data-thundrly-setup-page");
+  }, [setupPageMode]);
 
   const missingSuggestions = useMemo(
     () => SUGGESTED_CATEGORIES.filter((s) => !categories.some((c) => c.category.toLowerCase() === s.toLowerCase())),

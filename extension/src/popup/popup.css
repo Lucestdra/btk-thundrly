@@ -52,20 +52,20 @@ html, body {
 
 #root { width: 380px; padding: 0; }
 
-html[data-thundrly-setup],
-html[data-thundrly-setup] body {
+html[data-thundrly-setup-page],
+html[data-thundrly-setup-page] body {
   width: 100%;
   min-height: 100%;
 }
 
-html[data-thundrly-setup] body {
+html[data-thundrly-setup-page] body {
   display: flex;
   justify-content: center;
   align-items: flex-start;
   padding: 28px;
 }
 
-html[data-thundrly-setup] #root {
+html[data-thundrly-setup-page] #root {
   width: min(420px, 100%);
 }
 

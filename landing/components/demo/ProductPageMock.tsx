@@ -1,6 +1,7 @@
 "use client";
 
-import { Star, Heart, Package } from "lucide-react";
+import Image from "next/image";
+import { Star, Heart } from "lucide-react";
 import { cn } from "@/lib/cn";
 
 export function ProductPageMock({ className }: { className?: string }) {
@@ -21,8 +22,15 @@ export function ProductPageMock({ className }: { className?: string }) {
       </div>
 
       <div className="p-6 grid grid-cols-5 gap-5">
-        <div className="col-span-2 aspect-square rounded-xl bg-bg-tertiary border border-line flex items-center justify-center">
-          <Package className="h-12 w-12 text-ink-faint" strokeWidth={1} />
+        <div className="col-span-2 relative aspect-square rounded-xl bg-bg-tertiary border border-line overflow-hidden">
+          <Image
+            src="/oversize-hoodie.jpg"
+            alt="Oversize Siyah Hoodie"
+            fill
+            sizes="(min-width: 1024px) 220px, (min-width: 768px) 30vw, 40vw"
+            className="object-cover"
+            priority
+          />
         </div>
 
         <div className="col-span-3 space-y-3">

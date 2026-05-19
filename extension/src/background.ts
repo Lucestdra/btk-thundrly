@@ -37,6 +37,8 @@ const ALLOWED_HOST_SUFFIXES = [
   "tchibo.com.tr", "decathlon.com.tr", "ikea.com.tr",
 ];
 
+const BUDGET_SETUP_REQUEST_KEY = "thundrly:budget-setup-requested";
+
 function isAllowedSender(sender: chrome.runtime.MessageSender | undefined): boolean {
   if (!sender) return false;
   // Sender ID check: rejects messages from any other extension that
@@ -184,9 +186,13 @@ chrome.runtime.onMessage.addListener((msg: IncomingMessage, sender, sendResponse
   if (msg?.type === "openBudgetSetup") {
     (async () => {
       try {
-        await chrome.tabs.create({
-          url: chrome.runtime.getURL("src/popup/index.html?setup=1"),
-        });
+        await chrome.storage.local.set({ [BUDGET_SETUP_REQUEST_KEY]: Date.now() });
+        const openPopup = (chrome.action as { openPopup?: () => Promise<void> }).openPopup;
+        if (!openPopup) {
+          sendResponse({ ok: false, error: "chrome.action.openPopup unavailable" });
+          return;
+        }
+        await openPopup.call(chrome.action);
         sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });

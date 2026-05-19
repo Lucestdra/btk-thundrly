@@ -50,20 +50,6 @@ export function Hero() {
                 </Button>
               </a>
             </motion.div>
-
-            {/* Trust line — vertical pills on mobile, horizontal with dots on sm+ */}
-            <motion.ul
-              variants={fadeUp}
-              className="mt-8 sm:mt-12 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-y-2 sm:gap-x-6 lg:gap-x-8 text-[12px] text-ink-muted"
-            >
-              <li className="sm:after:content-['·'] sm:after:ml-6 lg:after:ml-8 sm:after:text-ink-faint sm:last:after:content-none">
-                Trendyol, Hepsiburada, N11 uyumlu
-              </li>
-              <li className="sm:after:content-['·'] sm:after:ml-6 lg:after:ml-8 sm:after:text-ink-faint sm:last:after:content-none">
-                LangGraph multi-agent mimari
-              </li>
-              <li>Türkçe açıklama</li>
-            </motion.ul>
           </div>
 
           {/* Decorative product + panel mock — md+ only; on tablet (md-lg)
