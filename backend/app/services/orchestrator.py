@@ -101,6 +101,18 @@ def _resolve_budget(db: Session, req: AnalyzeRequest):
     Logging here is intentionally verbose — Bütçe Verisi Yok reports
     were historically hard to diagnose without seeing both the extractor
     string and the classifier's verdict in the same log line.
+
+    Stale-row defense: a per-category row only wins over the global
+    envelope when ALL of these hold:
+        (a) the row's ``category_limit`` is **strictly tighter** than
+            the global monthly cap — otherwise it adds no information
+            and just risks shadowing the canonical envelope with stale
+            ``category_spent`` from prior tests
+        (b) the classifier is highly confident OR the user explicitly
+            typed the same category string in the popup
+
+    This fixes the "I set global=₺10000 but agent says 170% over" class
+    of bugs caused by an unrelated leftover row.
     """
     user_id = req.userId
     raw_cat = req.product.category or ""
@@ -111,38 +123,59 @@ def _resolve_budget(db: Session, req: AnalyzeRequest):
     )
 
     user_prefix = user_id[:12] + "…" if len(user_id) > 12 else user_id
+    global_budget = get_effective_global(db, user_id)
+    global_cap = global_budget.monthlyLimit if global_budget is not None else None
 
-    # 1) Per-category lookup, but only when classification is confident
-    # enough that a hit/miss is meaningful.
+    def _tighter_than_global(per_cat) -> bool:
+        if global_cap is None or global_cap <= 0:
+            return True  # no global to compare against — per-cat wins trivially
+        return per_cat.categoryLimit > 0 and per_cat.categoryLimit < global_cap
+
+    # 1) Per-category lookup, gated by classification confidence + the
+    # "tighter than global" rule above.
     if classification.confidence >= _CATEGORY_CONFIDENCE_THRESHOLD:
         per_cat = get_budget_strict(db, user_id, classification.category)
         if per_cat is not None:
+            tighter = _tighter_than_global(per_cat)
             logger.info(
-                "budget.resolved.category user=%s raw=%r normalized=%s confidence=%.2f",
+                "budget.candidate.category user=%s raw=%r normalized=%s confidence=%.2f "
+                "category_limit=%.0f category_spent=%.0f global_cap=%s tighter_than_global=%s",
                 user_prefix, raw_cat, classification.category, classification.confidence,
+                per_cat.categoryLimit, per_cat.categorySpent or 0.0,
+                global_cap, tighter,
             )
-            return per_cat
+            if tighter:
+                logger.info("budget.resolved.category → using per-category row")
+                return per_cat
+            else:
+                logger.info(
+                    "budget.skipped.category → per-category row is NOT tighter than global; "
+                    "preferring global envelope to avoid stale-row shadowing"
+                )
 
     # 2) Try the extractor's original string verbatim (power users who
     # configured a custom category name that doesn't map to our taxonomy).
     if raw_cat:
         verbatim = get_budget_strict(db, user_id, raw_cat)
         if verbatim is not None:
+            tighter = _tighter_than_global(verbatim)
             logger.info(
-                "budget.resolved.verbatim user=%s category=%r", user_prefix, raw_cat,
+                "budget.candidate.verbatim user=%s category=%r category_limit=%.0f "
+                "category_spent=%.0f global_cap=%s tighter_than_global=%s",
+                user_prefix, raw_cat, verbatim.categoryLimit, verbatim.categorySpent or 0.0,
+                global_cap, tighter,
             )
-            return verbatim
+            if tighter:
+                logger.info("budget.resolved.verbatim → using verbatim per-category row")
+                return verbatim
 
-    # 3) GLOBAL envelope — always-available safety net. Falls back to a
-    # synthesized envelope (from any per-category row's monthly_limit)
-    # when no explicit GLOBAL row exists, so legacy users who only
-    # configured one category still get a sensible verdict on unrelated
-    # products.
-    global_budget = get_effective_global(db, user_id)
+    # 3) GLOBAL envelope — always-available safety net.
     if global_budget is not None:
         logger.info(
-            "budget.resolved.global user=%s raw=%r classified=%s/%.2f",
+            "budget.resolved.global user=%s raw=%r classified=%s/%.2f "
+            "monthly_limit=%.0f monthly_spent=%.0f",
             user_prefix, raw_cat, classification.category, classification.confidence,
+            global_budget.monthlyLimit, global_budget.monthlySpent or 0.0,
         )
         return global_budget
 

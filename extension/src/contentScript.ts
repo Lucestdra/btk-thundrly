@@ -196,6 +196,50 @@ async function maybeShowOnboarding() {
 void maybeShowOnboarding();
 attachAll();
 
+// ---------------------------------------------------------------
+// Debug helper — call `window.__THUNDRLY_DUMP()` in DevTools console
+// on any Trendyol product page to print every signal we can read.
+// Paste the output into a bug report; we use it to inform extractor
+// tweaks when a price/review extraction goes sideways.
+// ---------------------------------------------------------------
+(window as unknown as Record<string, unknown>).__THUNDRLY_DUMP = () => {
+  const nextDataNode = document.querySelector<HTMLScriptElement>("script#__NEXT_DATA__");
+  const ldNodes = Array.from(document.querySelectorAll<HTMLScriptElement>("script[type='application/ld+json']"));
+  const priceElements = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      "[class*='price' i], [class*='prc' i], [data-testid*='price' i], [data-test-id*='price' i], [itemprop='price']",
+    ),
+  )
+    .slice(0, 20)
+    .map((el) => ({
+      tag: el.tagName.toLowerCase(),
+      cls: el.className.slice(0, 80),
+      text: (el.textContent || "").trim().slice(0, 60),
+      content: el.getAttribute("content") || undefined,
+    }));
+
+  const dump = {
+    host,
+    url: location.href,
+    title: document.title,
+    ogTitle: document.querySelector<HTMLMetaElement>("meta[property='og:title']")?.content,
+    nextDataLength: nextDataNode?.textContent?.length || 0,
+    nextDataPreview: nextDataNode?.textContent?.slice(0, 800),
+    jsonLdBlocks: ldNodes.map((n) => {
+      try {
+        return JSON.parse(n.textContent || "null");
+      } catch {
+        return { _error: "parse failed" };
+      }
+    }),
+    priceElements,
+  };
+
+  console.log("[Thundrly/dump]", dump);
+  return dump;
+};
+console.log("[Thundrly] debug helper: window.__THUNDRLY_DUMP() çıktıyı kopyala");
+
 // SPA / lazy-render sayfalar için DOM değişikliklerini izle.
 const observer = new MutationObserver(() => {
   attachAll();

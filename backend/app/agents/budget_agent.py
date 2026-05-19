@@ -53,6 +53,25 @@ def _monthly_score(pct_after: int) -> int:
 
 def run(req: AnalyzeRequest) -> AgentResult:
     user_prefix = (req.userId[:12] + "…") if req.userId and len(req.userId) > 12 else (req.userId or "?")
+    # Log the EXACT budget shape the agent received before any branching.
+    # This pairs with budget.resolved.* in the orchestrator log so the
+    # full resolution chain is visible in one trace.
+    if req.userBudget is not None:
+        b = req.userBudget
+        logger.info(
+            "budget_agent.input",
+            extra={
+                "event": "budget_agent.input",
+                "user": user_prefix,
+                "category_raw": (req.product.category or "")[:40],
+                "price": req.product.price,
+                "monthly_limit": b.monthlyLimit,
+                "monthly_spent": b.monthlySpent,
+                "category_limit": b.categoryLimit,
+                "category_spent": b.categorySpent,
+                "currency": b.currency,
+            },
+        )
     if req.userBudget is None:
         # No budget rows for this user at all. The message names the
         # detected category so the user can compare it against what they

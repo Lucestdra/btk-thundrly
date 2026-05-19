@@ -13,7 +13,12 @@ import os
 import threading
 from typing import Optional
 
-_DEFAULT_MODEL = "gemini-1.5-flash"
+# Default model: Gemini 2.5 Flash. Released Q1 2026 with substantially
+# better Turkish-language summarization and structured-output adherence
+# than the 1.5 generation, at similar latency and cost. Override via the
+# GEMINI_MODEL env var when you need a different tier (e.g. `gemini-2.5-pro`
+# for higher-stakes scoring runs).
+_DEFAULT_MODEL = "gemini-2.5-flash"
 
 _lock = threading.Lock()
 _cached_client = None

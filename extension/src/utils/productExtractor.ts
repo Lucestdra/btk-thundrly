@@ -440,80 +440,134 @@ export function extractLegalLowestPrice30d(root: ParentNode = document): number 
  * with at least a `discountedPrice` or `sellingPrice` field. Either may
  * be undefined if absent.
  */
-function readTrendyolNextDataPrice(): { price?: number; originalPrice?: number } {
+function readTrendyolNextDataPrice(): {
+  price?: number;
+  originalPrice?: number;
+  /** All price-shaped numeric values we found, keyed by their JSON path. */
+  allCandidates: Array<{ path: string; value: number }>;
+} {
   const node = document.querySelector<HTMLScriptElement>("script#__NEXT_DATA__");
-  if (!node?.textContent) return {};
+  if (!node?.textContent) return { allCandidates: [] };
   try {
     const data = JSON.parse(node.textContent);
-    const found = _findTrendyolPriceNode(data, 0);
-    if (!found) return {};
-    return found;
-  } catch {
-    return {};
-  }
-}
+    const sellingLike: Array<{ path: string; value: number }> = [];
+    const originalLike: Array<{ path: string; value: number }> = [];
+    const genericPriceLike: Array<{ path: string; value: number }> = [];
 
-function _coerceNum(v: unknown): number | undefined {
-  if (typeof v === "number" && Number.isFinite(v) && v > 0) return v;
-  if (typeof v === "string") return parsePrice(v);
-  if (v && typeof v === "object") {
-    // Trendyol sometimes wraps as { value: 307.5, currency: "TRY" } or
-    // { discountedPrice: { value: ... } }.
-    const obj = v as Record<string, unknown>;
-    if ("value" in obj) return _coerceNum(obj.value);
-    if ("amount" in obj) return _coerceNum(obj.amount);
-  }
-  return undefined;
-}
+    _walkTrendyolPrices(data, "", 0, (path, key, value) => {
+      const lk = key.toLowerCase();
+      // Skip values that are clearly NOT a product total. Filter out
+      // installment-y fields by name.
+      if (/installment|taksit|monthly|perpiece|pieceprice|unitprice|cargo|kargo|shipping|tax/i.test(path)) {
+        return;
+      }
+      // Sanity: anything outside ₺5..₺500_000 isn't a Turkish product price.
+      if (value < 5 || value > 500_000) return;
 
-function _findTrendyolPriceNode(
-  node: unknown,
-  depth: number,
-): { price?: number; originalPrice?: number } | null {
-  if (depth > 14 || !node) return null;
-  if (Array.isArray(node)) {
-    for (const item of node) {
-      const hit = _findTrendyolPriceNode(item, depth + 1);
-      if (hit) return hit;
+      if (/sellingprice|discountedprice|salesprice|finalprice|currentprice/.test(lk)) {
+        sellingLike.push({ path, value });
+      } else if (/originalprice|listprice|previousprice|prevprice|baseprice/.test(lk)) {
+        originalLike.push({ path, value });
+      } else if (lk === "price" || lk.endsWith(".price") || /^\w*price$/.test(lk)) {
+        genericPriceLike.push({ path, value });
+      }
+    });
+
+    const all = [...sellingLike, ...originalLike, ...genericPriceLike];
+    // Prefer the most-specific match for the displayed total. We pick the
+    // MAXIMUM value, because:
+    //   - Genuine discount: discountedPrice (smaller) and originalPrice
+    //     (larger) — we want discountedPrice as the price the user pays.
+    //   - BUT: installment / per-piece values are *also* smaller than the
+    //     total. We can't tell them apart from a real discount by name.
+    //   - The displayed total on the buy button is always ≥ any
+    //     installment value, so MAX across "selling-like" + "original-like"
+    //     fields is a safe upper bound. If no discount applies it equals
+    //     the listed price; if a real discount applies we'll still surface
+    //     the original via `originalPrice`.
+    const sellingMax = sellingLike.reduce((m, c) => Math.max(m, c.value), 0);
+    const originalMax = originalLike.reduce((m, c) => Math.max(m, c.value), 0);
+
+    // Always-on candidate dump so the user can paste it back when the
+    // result is wrong. Bounded to 12 entries so it doesn't spam.
+    console.log("[Thundrly/extract] __NEXT_DATA__ price candidates:", {
+      selling: sellingLike.slice(0, 8),
+      original: originalLike.slice(0, 8),
+      generic: genericPriceLike.slice(0, 4),
+    });
+
+    // Strategy: if a selling-shaped value exists, pick the largest such
+    // value (defeats per-installment / per-piece duplicates). Otherwise
+    // fall back to the largest generic price.
+    const price =
+      sellingMax > 0
+        ? sellingMax
+        : genericPriceLike.reduce((m, c) => Math.max(m, c.value), 0) || undefined;
+    const originalPrice = originalMax > 0 ? originalMax : undefined;
+
+    // Final installment sanity: if originalPrice exists and price is
+    // less than 1/2 of it, that's a deeper-than-50% discount which is
+    // suspicious on Trendyol. Replace `price` with the closest selling-
+    // -like candidate that's at least originalPrice / 2.
+    let finalPrice = price;
+    if (price && originalPrice && price < originalPrice / 2) {
+      const plausible = sellingLike
+        .map((c) => c.value)
+        .filter((v) => v >= originalPrice / 2)
+        .sort((a, b) => a - b)[0];
+      if (plausible) finalPrice = plausible;
     }
-    return null;
+
+    return {
+      price: finalPrice,
+      originalPrice: originalPrice && finalPrice && originalPrice <= finalPrice ? undefined : originalPrice,
+      allCandidates: all,
+    };
+  } catch (e) {
+    console.warn("[Thundrly/extract] __NEXT_DATA__ parse failed:", e);
+    return { allCandidates: [] };
   }
-  if (typeof node !== "object") return null;
+}
+
+/** Recursive walker that invokes `visit(path, key, numericValue)` for every
+ *  leaf numeric (or numeric-string) value in the tree. Skips obviously
+ *  non-product subtrees by path heuristic to keep the work bounded. */
+function _walkTrendyolPrices(
+  node: unknown,
+  path: string,
+  depth: number,
+  visit: (path: string, key: string, value: number) => void,
+): void {
+  if (depth > 16) return;
+  // Skip subtrees we know are noise.
+  if (/(recommendations|relatedProducts|crossProducts|similarProducts|seoData|breadcrumb)/i.test(path)) {
+    return;
+  }
+  if (Array.isArray(node)) {
+    for (let i = 0; i < Math.min(node.length, 200); i++) {
+      _walkTrendyolPrices(node[i], `${path}[${i}]`, depth + 1, visit);
+    }
+    return;
+  }
+  if (!node || typeof node !== "object") return;
   const obj = node as Record<string, unknown>;
-
-  // Trendyol's product node usually has BOTH a "price" subtree AND
-  // canonical fields like productGroupId / contentId. We accept either
-  // shape so the heuristic is tolerant of A/B variants.
-  const directDiscounted = _coerceNum(obj.discountedPrice);
-  const directSelling = _coerceNum(obj.sellingPrice);
-  const directOriginal = _coerceNum(obj.originalPrice);
-
-  // Some payloads embed a nested "price" container.
-  let nestedDiscounted: number | undefined;
-  let nestedSelling: number | undefined;
-  let nestedOriginal: number | undefined;
-  if (obj.price && typeof obj.price === "object") {
-    const p = obj.price as Record<string, unknown>;
-    nestedDiscounted = _coerceNum(p.discountedPrice);
-    nestedSelling = _coerceNum(p.sellingPrice);
-    nestedOriginal = _coerceNum(p.originalPrice);
+  for (const [k, v] of Object.entries(obj)) {
+    const nextPath = path ? `${path}.${k}` : k;
+    if (typeof v === "number" && Number.isFinite(v) && v > 0) {
+      visit(nextPath, k, v);
+    } else if (typeof v === "string") {
+      const parsed = parsePrice(v);
+      if (parsed !== undefined) visit(nextPath, k, parsed);
+    } else if (v && typeof v === "object") {
+      // Special-case the { value: N, currency: "TRY" } wrapper.
+      const inner = v as Record<string, unknown>;
+      if (typeof inner.value === "number" && Number.isFinite(inner.value)) {
+        visit(nextPath, k, inner.value);
+      } else {
+        _walkTrendyolPrices(v, nextPath, depth + 1, visit);
+      }
+    }
   }
-
-  const price = directDiscounted ?? directSelling ?? nestedDiscounted ?? nestedSelling;
-  const originalPrice = directOriginal ?? nestedOriginal;
-  // Sanity: Trendyol typical price > ₺20 (installments are usually much
-  // lower per-month). If we found a number but it's tiny AND the surrounding
-  // node has installment markers, skip.
-  if (price !== undefined && price >= 20) {
-    return { price, originalPrice };
-  }
-
-  // Recurse.
-  for (const v of Object.values(obj)) {
-    const hit = _findTrendyolPriceNode(v, depth + 1);
-    if (hit) return hit;
-  }
-  return null;
 }
 
 // ---------- Strategy 6: last-resort regex sweep ----------
@@ -622,10 +676,9 @@ export function extractProductBasics(host: Host): Partial<Product> {
     if (tn.originalPrice !== undefined) next.originalPrice = tn.originalPrice;
   }
 
-  // ALWAYS log each layer's price so the next bad screenshot is
-  // trivial to diagnose. Tagged so it groups with the other Thundrly
-  // lines in the console.
-  console.log("[Thundrly/extract] per-layer prices:", {
+  // ALWAYS log each layer's price so the next bad screenshot is trivial
+  // to diagnose. console.warn so it stands out against page chatter.
+  console.warn("[Thundrly/extract] per-layer prices:", {
     jsonLd: ld.price,
     microdata: micro.price,
     nextData: next.price,
