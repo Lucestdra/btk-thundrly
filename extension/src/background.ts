@@ -97,7 +97,19 @@ chrome.runtime.onMessage.addListener((msg: IncomingMessage, sender, sendResponse
           body: JSON.stringify(msg.payload),
         });
         if (!r.ok) {
-          sendResponse({ ok: false, error: `HTTP ${r.status}` });
+          // Pull the server's error body so the panel can show *what*
+          // was wrong (Pydantic field errors, etc.) instead of just a
+          // bare HTTP status. Kept under 800 chars so a giant
+          // stacktrace can't blow the message-passing channel.
+          let detail = `HTTP ${r.status}`;
+          try {
+            const body = await r.text();
+            if (body) detail = `HTTP ${r.status} — ${body.slice(0, 800)}`;
+          } catch {
+            /* response body unreadable, keep bare status */
+          }
+          console.warn("[Thundrly/bg] analyze failed:", detail);
+          sendResponse({ ok: false, error: detail });
           return;
         }
         const data = (await r.json()) as AnalyzeResponse;

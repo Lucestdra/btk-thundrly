@@ -20,7 +20,18 @@ import type {
   AnalyzeRequest,
   AnalyzeResponse,
 } from "@shared/types";
-import { redHoodieResponse } from "@shared/demo/demoPayloads";
+
+/**
+ * Error thrown when the backend rejects or fails an analyze request.
+ * The panel catches this and renders the actual server message instead
+ * of silently substituting a demo fixture (which historically masked
+ * every real bug — see Mayıs 2026 422 incident).
+ */
+export class AnalyzeBackendError extends Error {
+  constructor(public readonly detail: string, public readonly httpStatus?: number) {
+    super(`[Thundrly] backend ${httpStatus ?? "??"}: ${detail}`);
+  }
+}
 
 // ----------------------- one-shot fetch (legacy) -----------------------
 
@@ -32,32 +43,26 @@ export async function analyzePurchase(
   req: AnalyzeRequest,
   options: { forceRefresh?: boolean } = {},
 ): Promise<AnalyzeResponse> {
-  try {
-    const resp = await chrome.runtime.sendMessage<
-      { type: "analyze"; payload: AnalyzeRequest; forceRefresh?: boolean },
-      Message
-    >({
-      type: "analyze",
-      payload: req,
-      forceRefresh: options.forceRefresh,
-    });
-    if (resp && resp.ok) {
-      logAnalyzeResponse(resp.data, "fetch");
-      return resp.data;
-    }
-    console.warn(
-      "[Thundrly] backend yanıtı yok — fallback DEMO fixture kullanılıyor. " +
-      "Bu uyarı görüldüğü sürece sonuç GERÇEK analiz değildir.",
-      resp,
-    );
-    return redHoodieResponse;
-  } catch (e) {
-    console.warn(
-      "[Thundrly] backend exception — fallback DEMO fixture. Backend çalışıyor mu? CORS / host_permissions kontrol et.",
-      e,
-    );
-    return redHoodieResponse;
+  const resp = await chrome.runtime.sendMessage<
+    { type: "analyze"; payload: AnalyzeRequest; forceRefresh?: boolean },
+    Message
+  >({
+    type: "analyze",
+    payload: req,
+    forceRefresh: options.forceRefresh,
+  });
+  if (resp && resp.ok) {
+    logAnalyzeResponse(resp.data, "fetch");
+    return resp.data;
   }
+  // Hard fail. The previous behavior — silently substituting the demo
+  // red-hoodie fixture — masked every real backend bug (CORS, schema
+  // drift, 422, GEMINI_API_KEY missing) by rendering plausible-looking
+  // fake numbers. The panel now surfaces the actual server error so the
+  // user knows the verdict isn't real.
+  const detail = (resp && !resp.ok ? resp.error : null) || "yanıt yok";
+  console.error("[Thundrly] analyzePurchase FAILED:", detail, resp);
+  throw new AnalyzeBackendError(detail);
 }
 
 /**

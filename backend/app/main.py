@@ -6,8 +6,10 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -71,6 +73,36 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # ty
 app.add_middleware(SlowAPIMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 attach_request_id_header(app)
+
+
+@app.exception_handler(RequestValidationError)
+async def _log_validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:
+    """Surface 422 details in the structured log instead of swallowing them.
+
+    Without this handler, a malformed analyze-purchase payload returns
+    422 but the log only records `POST /api/analyze-purchase -> 422`,
+    making it impossible to tell which field failed validation. We now
+    log the per-field error list plus a short body excerpt so the
+    extension <-> backend contract drift is debuggable from the server
+    side alone.
+    """
+    try:
+        raw_body = (await request.body()).decode("utf-8", errors="replace")
+    except Exception:  # noqa: BLE001
+        raw_body = "<unreadable>"
+
+    logger.warning(
+        "request.validation_error",
+        extra={
+            "event": "request.validation_error",
+            "path": request.url.path,
+            "method": request.method,
+            "errors": exc.errors(),
+            "body_excerpt": raw_body[:2000],
+        },
+    )
+    # Keep the 422 response shape stable for clients.
+    return JSONResponse(status_code=422, content={"detail": exc.errors()})
 
 app.add_middleware(
     CORSMiddleware,
