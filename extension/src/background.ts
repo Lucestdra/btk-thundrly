@@ -223,21 +223,31 @@ async function fetchAndParseReviews(url: string, host: Host): Promise<Review[]> 
   // to REVIEW_PAGE_LIMIT or REVIEW_PAGE_CAP, whichever comes first.
   // Stop early on an empty page (end of stream) so we don't burn time
   // on dead requests.
-  if (host !== "trendyol" && host !== "hepsiburada") return [];
+  if (host !== "trendyol" && host !== "hepsiburada") {
+    console.log(`[Thundrly/bg] /yorumlar fetch: unsupported host ${host}`);
+    return [];
+  }
 
+  console.log(`[Thundrly/bg] /yorumlar fetch start: host=${host} url=${url}`);
   const all: Review[] = [];
   const seen = new Set<string>();
   for (let page = 1; page <= REVIEW_PAGE_LIMIT; page++) {
     const pageUrl = appendReviewPageParam(url, host, page);
+    const pageStart = Date.now();
     const r = await fetchWithRetry(pageUrl);
-    if (!r) break;
+    if (!r) {
+      console.warn(`[Thundrly/bg] page ${page}: fetch failed after retries`);
+      break;
+    }
     const html = await r.text();
+    console.log(
+      `[Thundrly/bg] page ${page}: HTTP ${r.status}, ${html.length} bytes, ${Date.now() - pageStart}ms`,
+    );
     const batch = host === "trendyol" ? parseTrendyolReviews(html) : parseHepsiburadaReviews(html);
+    console.log(`[Thundrly/bg] page ${page}: parser yielded ${batch.length} reviews`);
     if (batch.length === 0) break;
     let added = 0;
     for (const rv of batch) {
-      // Dedup by (author|text|date) — Trendyol's later pages occasionally
-      // repeat the first page's items during pagination races.
       const key = `${rv.author || ""}|${rv.text}|${rv.date}`;
       if (seen.has(key)) continue;
       seen.add(key);
@@ -247,6 +257,7 @@ async function fetchAndParseReviews(url: string, host: Host): Promise<Review[]> 
     }
     if (all.length >= REVIEW_PAGE_CAP || added === 0) break;
   }
+  console.log(`[Thundrly/bg] /yorumlar fetch done: ${all.length} unique reviews`);
   return all;
 }
 
@@ -487,6 +498,11 @@ function isStartMessage(msg: unknown): msg is { type: "start"; payload: AnalyzeR
   return !!msg && typeof msg === "object" && (msg as { type?: unknown }).type === "start";
 }
 
-chrome.runtime.onInstalled.addListener(() => {
-  console.log("[Thundrly] eklenti yüklendi.");
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log("[Thundrly] eklenti yüklendi.", details.reason);
+  // First-install onboarding now runs **inside the page panel** the first
+  // time the user lands on a supported e-commerce site (see contentScript
+  // `maybeShowOnboarding`). We don't open a new tab anymore — opening a
+  // welcome tab from the service worker was disorienting and forced the
+  // user out of their browsing flow.
 });

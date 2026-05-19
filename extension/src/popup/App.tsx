@@ -19,6 +19,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getInstallId } from "@/utils/installId";
 import { USER_BUDGETS_URL, USER_BUDGET_GLOBAL_URL, USER_BUDGET_URL } from "@/config";
+import { LogoMark } from "@/components/LogoMark";
 
 interface CategoryBudget {
   category: string;
@@ -335,7 +336,9 @@ export function App() {
 function Header() {
   return (
     <header className="pop-header">
-      <div className="pop-logo">T</div>
+      <span className="pop-logo">
+        <LogoMark size={22} />
+      </span>
       <div className="pop-brand">
         <small>Thundrly</small>
         <strong>Bütçe ayarları</strong>

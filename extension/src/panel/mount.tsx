@@ -1,6 +1,7 @@
 import { createRoot, type Root } from "react-dom/client";
 import type { AnalyzeRequest } from "@shared/types/analysis";
 import { App } from "./App";
+import { OnboardingPanel } from "./OnboardingPanel";
 import panelCss from "./Panel.css?inline";
 
 const HOST_ID = "kg-panel-host";
@@ -12,18 +13,19 @@ interface MountOpts {
   onClose: () => void;
 }
 
+interface OnboardingMountOpts {
+  onFinish: () => void;
+}
+
 let activeRoot: Root | null = null;
 let activeHost: HTMLDivElement | null = null;
 
-export function mountPanel(opts: MountOpts) {
-  unmountPanel();
-
+function makeShadowMount(): HTMLDivElement {
   const host = document.createElement("div");
   host.id = HOST_ID;
   document.documentElement.appendChild(host);
 
   const shadow = host.attachShadow({ mode: "open" });
-
   const style = document.createElement("style");
   style.textContent = panelCss;
   shadow.appendChild(style);
@@ -31,9 +33,15 @@ export function mountPanel(opts: MountOpts) {
   const mountNode = document.createElement("div");
   shadow.appendChild(mountNode);
 
+  activeHost = host;
+  return mountNode;
+}
+
+export function mountPanel(opts: MountOpts) {
+  unmountPanel();
+  const mountNode = makeShadowMount();
   const root = createRoot(mountNode);
   activeRoot = root;
-  activeHost = host;
 
   root.render(
     <App
@@ -51,6 +59,26 @@ export function mountPanel(opts: MountOpts) {
         opts.onClose();
       }}
     />,
+  );
+}
+
+export function mountOnboarding(opts: OnboardingMountOpts) {
+  // Onboarding takes priority over any existing panel — but the analyze
+  // panel only mounts on a buy-button click, and the onboarding fires at
+  // document_idle, so in practice they never collide. Still: unmount any
+  // stray host first so we never get two shadow roots side-by-side.
+  unmountPanel();
+  const mountNode = makeShadowMount();
+  const root = createRoot(mountNode);
+  activeRoot = root;
+
+  const finish = () => {
+    opts.onFinish();
+    unmountPanel();
+  };
+
+  root.render(
+    <OnboardingPanel onFinish={finish} onDismiss={finish} />,
   );
 }
 

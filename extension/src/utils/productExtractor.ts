@@ -150,6 +150,84 @@ function readJsonLd(): LDJson | null {
   return null;
 }
 
+/**
+ * True only when the current page looks like a real Product Detail Page,
+ * not a homepage / listing / category. We use this as a hard precondition
+ * before intercepting any "Sepete Ekle" click — without it, the script
+ * fires on homepage product-card quick-buy buttons and reports nonsense
+ * like "₺0 — Trendyol homepage og:title" as the product.
+ *
+ * Strategy (any one is sufficient):
+ *   1. JSON-LD @type === "Product" present.
+ *   2. Microdata `itemtype` ends with `/Product`.
+ *   3. og:type === "product".
+ *   4. URL pattern matches a known PDP shape (Trendyol/Hepsi: `-p-<id>`).
+ *   5. Platform-specific product-title element is in DOM.
+ */
+const PLATFORM_PDP_MARKERS: Partial<Record<Host, string>> = {
+  trendyol: "h1[data-testid='product-title'], h1.pr-new-br, .product-detail-name",
+  hepsiburada: "h1[data-test-id='title'], h1[itemprop='name']",
+  n11: "h1.proName, .unf-p-summary-info h1",
+  amazon: "#productTitle",
+  ciceksepeti: "h1.product-name, h1[data-test='product-title']",
+  mediamarkt: "h1[data-test='mms-product-title']",
+  teknosa: "h1.pdp-title",
+  vatan: "h1.product-list__product-name",
+  boyner: "h1[data-testid='product-name']",
+  lcwaikiki: "h1.product-detail__product-name",
+  defacto: "h1.product-title",
+  modanisa: "h1.product-name",
+  a101: "h1.product-name",
+  migros: "h1.pdp-title, h1[data-test='product-title']",
+  carrefoursa: "h1.product-title",
+  beymen: "h1.o-productDetail__title",
+  pazarama: "h1.product-title",
+  pttavm: "h1.product-title",
+  tchibo: "h1[data-tcid='product-name']",
+  decathlon: "h1[data-testid='product-name']",
+  ikea: "h1.pip-header-section__title--big, h1.product-pip__title",
+};
+
+export function isProductPage(host: Host): boolean {
+  // Demo fixture is always considered a product page.
+  if (host === "demo") return document.querySelector("[data-kg-product]") !== null;
+
+  // 1. JSON-LD @type Product wins outright.
+  if (readJsonLd()) return true;
+
+  // 2. Microdata Product type.
+  const itemtype = document.querySelector<HTMLElement>("[itemtype]");
+  if (itemtype) {
+    const v = itemtype.getAttribute("itemtype") || "";
+    if (/\/Product\b/i.test(v)) return true;
+  }
+
+  // 3. og:type meta.
+  const ogType = document
+    .querySelector<HTMLMetaElement>("meta[property='og:type']")
+    ?.content?.toLowerCase();
+  if (ogType === "product" || ogType === "og:product") return true;
+
+  // 4. Known PDP URL shape.
+  const path = location.pathname;
+  if (host === "trendyol" && /-p-\d+/.test(path)) return true;
+  if (host === "hepsiburada" && /-p-[A-Z0-9]+/i.test(path)) return true;
+  if (host === "n11" && /-P\d+/.test(path)) return true;
+  if (host === "amazon" && /\/(dp|gp\/product)\/[A-Z0-9]+/i.test(path)) return true;
+
+  // 5. Platform-specific product-title element.
+  const marker = PLATFORM_PDP_MARKERS[host];
+  if (marker) {
+    try {
+      if (document.querySelector(marker)) return true;
+    } catch {
+      /* invalid selector — fall through */
+    }
+  }
+
+  return false;
+}
+
 function readFromLD(): Partial<Product> {
   const ld = readJsonLd();
   if (!ld) return {};
@@ -422,18 +500,36 @@ export function extractProductBasics(host: Host): Partial<Product> {
     if (demo) return demo;
   }
 
-  const merged = mergeFields(
-    readFromLD(),
-    readFromMicrodata(),
-    readFromPlatform(host),
-    readFromOg(),
-  );
+  const ld = readFromLD();
+  const micro = readFromMicrodata();
+  const plat = readFromPlatform(host);
+  const og = readFromOg();
+  if (_debugEnabled()) {
+    _dlog("price extraction layers:", {
+      jsonLd: ld.price,
+      microdata: micro.price,
+      platformSelector: plat.price,
+      ogMeta: og.price,
+    });
+  }
+
+  const merged = mergeFields(ld, micro, plat, og);
 
   // Last resort: regex-scan for TL/₺ near the buy button when the
   // structured strategies all returned a missing/zero price.
   if (!merged.price || merged.price <= 0) {
     const sweep = regexSweepPrice();
-    if (sweep !== undefined) merged.price = sweep;
+    if (sweep !== undefined) {
+      merged.price = sweep;
+      _dlog(`price: structured layers all empty; regex-sweep fallback found ₺${sweep}`);
+    }
+  } else {
+    _dlog(`price: ₺${merged.price} (from ${
+      ld.price === merged.price ? "JSON-LD" :
+      micro.price === merged.price ? "microdata" :
+      plat.price === merged.price ? "platform selectors" :
+      og.price === merged.price ? "og:meta" : "merged"
+    })`);
   }
 
   return merged;
@@ -480,20 +576,6 @@ function _firstElement(
   return null;
 }
 
-function _allElements(
-  scope: ParentNode,
-  selectors: string[],
-): HTMLElement[] {
-  for (const sel of selectors) {
-    try {
-      const found = Array.from(scope.querySelectorAll<HTMLElement>(sel));
-      if (found.length > 0) return found;
-    } catch {
-      // skip invalid selector
-    }
-  }
-  return [];
-}
 
 function _extractOneReview(container: HTMLElement, sels: ReviewSelectors): Review | null {
   const ratingEl = _firstElement(container, sels.rating);
@@ -542,18 +624,76 @@ function _extractOneReview(container: HTMLElement, sels: ReviewSelectors): Revie
   };
 }
 
+/**
+ * Verbose logging for review extraction. Set to true via DevTools console
+ * (`window.__THUNDRLY_DEBUG = true`) to see exactly which selectors matched
+ * and why each container was accepted or rejected. Off by default to keep
+ * the user's console quiet in production.
+ *
+ * The debug helper is exposed on the global so users can flip it without
+ * a rebuild. Diagnostic output uses a distinctive [Thundrly/reviews] tag
+ * so it's easy to filter in DevTools.
+ */
+function _debugEnabled(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    Boolean((window as unknown as Record<string, unknown>).__THUNDRLY_DEBUG)
+  );
+}
+function _dlog(...args: unknown[]): void {
+  if (_debugEnabled()) {
+    // eslint-disable-next-line no-console
+    console.log("[Thundrly/reviews]", ...args);
+  }
+}
+
 export function extractReviews(host: Host, root: ParentNode = document): Review[] {
   const sels: ReviewSelectors | undefined =
     host === "demo" ? DEMO_REVIEW_SELECTORS : PLATFORM_PACKS[host]?.reviews;
-  if (!sels) return [];
+  if (!sels) {
+    _dlog(`host=${host}: no review selector pack configured`);
+    return [];
+  }
 
-  const containers = _allElements(root, sels.container);
+  // Walk the container selectors and report which one(s) matched.
+  let matchedSelector: string | null = null;
+  let containers: HTMLElement[] = [];
+  for (const sel of sels.container) {
+    try {
+      const found = Array.from(root.querySelectorAll<HTMLElement>(sel));
+      if (found.length > 0) {
+        matchedSelector = sel;
+        containers = found;
+        _dlog(`container selector matched: ${sel} → ${found.length} elements`);
+        break;
+      }
+    } catch {
+      _dlog(`container selector invalid (skipped): ${sel}`);
+    }
+  }
+  if (containers.length === 0) {
+    _dlog(
+      `no container selector matched. tried ${sels.container.length} selectors. ` +
+      `DOM might use a new class name; inspect manually.`,
+    );
+    return [];
+  }
+
   const cap = sels.maxItems ?? 25;
   const out: Review[] = [];
+  let rejected = 0;
   for (const c of containers.slice(0, cap)) {
     const r = _extractOneReview(c, sels);
-    if (r) out.push(r);
+    if (r) {
+      out.push(r);
+    } else {
+      rejected++;
+    }
   }
+  _dlog(
+    `final: ${out.length} reviews extracted (${rejected} containers rejected — ` +
+    `likely missing rating or text). selector used: ${matchedSelector}`,
+  );
   return out;
 }
 
@@ -587,24 +727,36 @@ export async function extractReviewsAsync(
 ): Promise<Review[]> {
   // Fast path.
   let reviews = extractReviews(host);
-  if (reviews.length > 0) return reviews;
+  if (reviews.length > 0) {
+    _dlog(`fast-path: ${reviews.length} reviews already in DOM`);
+    return reviews;
+  }
+  _dlog("fast-path empty; trying scroll-trigger");
 
   const anchor = _findReviewAnchor();
-  if (!anchor) return reviews;
+  if (!anchor) {
+    _dlog("no review-section anchor found in DOM — giving up at fast-path");
+    return reviews;
+  }
+  _dlog(`scrolling anchor into view: <${anchor.tagName.toLowerCase()}>`, anchor.textContent?.slice(0, 60));
 
   const prevY = window.scrollY;
   try {
     // First settle pass.
+    const start1 = Date.now();
     reviews = await _scrollSettleAndExtract(host, anchor, maxWaitMs);
+    _dlog(`pass-1 settle: ${reviews.length} reviews in ${Date.now() - start1}ms`);
     if (reviews.length > 0) return reviews;
 
-    // Second pass — some lazy loaders need a second scroll tick. Wait
-    // longer this time since the first pass already exhausted the easy
-    // case. The extra ~2s of work is the explicit reliability/latency
-    // trade-off the user signed off on.
+    // Second pass — some lazy loaders need a second scroll tick.
+    const start2 = Date.now();
     reviews = await _scrollSettleAndExtract(host, anchor, maxWaitMs);
+    _dlog(`pass-2 settle: ${reviews.length} reviews in ${Date.now() - start2}ms`);
   } finally {
     window.scrollTo({ top: prevY, behavior: "auto" });
+  }
+  if (reviews.length === 0) {
+    _dlog("both passes empty — content script will fall through to background /yorumlar fetch");
   }
   return reviews;
 }
@@ -679,13 +831,22 @@ async function _scrollSettleAndExtract(
  */
 export async function requestReviewsFromBackground(host: Host): Promise<Review[]> {
   const subpageUrl = reviewSubpageUrl(host, location.href);
-  if (!subpageUrl) return [];
+  if (!subpageUrl) {
+    _dlog(`no /yorumlar subpage URL pattern for host=${host}`);
+    return [];
+  }
+  _dlog(`background fetch: GET ${subpageUrl}`);
+  const start = Date.now();
   try {
     const resp = await chrome.runtime.sendMessage<
       { type: "fetchReviews"; payload: { url: string; host: Host } },
       { ok: true; reviews: Review[] } | { ok: false; error: string }
     >({ type: "fetchReviews", payload: { url: subpageUrl, host } });
-    if (resp && resp.ok) return resp.reviews;
+    if (resp && resp.ok) {
+      _dlog(`background fetch: got ${resp.reviews.length} reviews in ${Date.now() - start}ms`);
+      return resp.reviews;
+    }
+    _dlog(`background fetch failed:`, resp);
   } catch (e) {
     console.warn("[Thundrly] yorumlar arka plan fetch'i başarısız:", e);
   }

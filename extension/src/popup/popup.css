@@ -1,33 +1,32 @@
+/* ──────────────────────────────────────────────────────────────
+   Thundrly popup — locked in step with landing/tailwind.config.ts
+   so the toolbar UI reads as the same product as thundrly.com.
+   ────────────────────────────────────────────────────────────── */
 :root {
-  color-scheme: dark light;
-  --bg: linear-gradient(180deg, #003249, #001e2d);
-  --ink: #ccdbdc;
-  --ink-dim: rgba(204, 219, 220, 0.62);
-  --ink-faint: rgba(204, 219, 220, 0.32);
-  --line: rgba(204, 219, 220, 0.12);
-  --line-strong: rgba(204, 219, 220, 0.22);
-  --accent: #80ced7;
-  --accent-deep: #007ea7;
-  --green: #8fb55c;
-  --yellow: #e1b942;
-  --red: #d35d4a;
-  --focus-ring: 0 0 0 3px rgba(128, 206, 215, 0.40);
+  color-scheme: light;
+  --bg:
+    radial-gradient(100% 80% at 100% 0%, rgba(154, 209, 212, 0.55) 0%, transparent 60%),
+    radial-gradient(100% 80% at 0% 100%, rgba(128, 206, 215, 0.42) 0%, transparent 55%),
+    linear-gradient(180deg, #d6e3e4, #ccdbdc);
+  --ink: #003249;
+  --ink-strong: #002233;
+  --ink-soft: rgba(0, 50, 73, 0.78);
+  --ink-dim: rgba(0, 50, 73, 0.58);
+  --ink-faint: rgba(0, 50, 73, 0.36);
+  --surface-0: rgba(255, 255, 255, 0.92);
+  --surface-1: rgba(255, 255, 255, 0.62);
+  --surface-2: rgba(255, 255, 255, 0.42);
+  --line: rgba(0, 50, 73, 0.10);
+  --line-strong: rgba(0, 50, 73, 0.22);
+  --accent: #007ea7;
+  --accent-soft: #80ced7;
+  --accent-pale: #9ad1d4;
+  --green: #6d8c4a;
+  --yellow: #caa028;
+  --red: #b04a3a;
+  --focus-ring: 0 0 0 3px rgba(0, 126, 167, 0.36);
 }
 
-/* Light-mode override — kept in lockstep with Panel.css. */
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: linear-gradient(180deg, #f2f7f9, #eaf2f5);
-    --ink: rgb(15, 32, 45);
-    --ink-dim: rgba(15, 32, 45, 0.62);
-    --ink-faint: rgba(15, 32, 45, 0.36);
-    --line: rgba(15, 32, 45, 0.10);
-    --line-strong: rgba(15, 32, 45, 0.20);
-    --focus-ring: 0 0 0 3px rgba(0, 126, 167, 0.32);
-  }
-}
-
-/* Branded focus ring across all keyboard-reachable controls. */
 .pop :focus-visible {
   outline: none;
   box-shadow: var(--focus-ring);
@@ -35,9 +34,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pop-bar-fill {
-    transition: none !important;
-  }
+  .pop-bar-fill { transition: none !important; }
 }
 
 * { box-sizing: border-box; }
@@ -48,15 +45,12 @@ html, body {
   width: 380px;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
   line-height: 1.45;
 }
 
-#root {
-  width: 380px;
-  padding: 0;
-}
+#root { width: 380px; padding: 0; }
 
 .pop {
   display: flex;
@@ -73,28 +67,32 @@ html, body {
   gap: 10px;
 }
 .pop-logo {
-  width: 32px;
-  height: 32px;
-  border-radius: 9px;
-  background: linear-gradient(135deg, #007ea7, #80ced7);
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: var(--surface-0);
+  border: 1px solid var(--line);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #003249;
-  font-weight: 700;
-  font-size: 16px;
+  color: var(--ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 1px 2px rgba(0, 50, 73, 0.08);
 }
 .pop-brand small {
   display: block;
   font-size: 10px;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.10em;
   text-transform: uppercase;
   color: var(--ink-dim);
+  font-weight: 500;
 }
 .pop-brand strong {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 13.5px;
-  color: var(--ink);
+  color: var(--ink-strong);
+  letter-spacing: -0.005em;
 }
 
 .pop-period {
@@ -113,11 +111,11 @@ html, body {
 
 .pop-label,
 .pop-label-row .pop-label {
-  font-size: 11.5px;
-  letter-spacing: 0.04em;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--ink-dim);
-  font-weight: 500;
+  font-weight: 600;
 }
 .pop-label-row {
   display: flex;
@@ -141,36 +139,35 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
-  background: rgba(204, 219, 220, 0.04);
+  background: var(--surface-0);
   border: 1px solid var(--line);
   border-radius: 10px;
   padding: 0 10px;
-  transition: border-color 150ms ease;
+  transition: border-color 150ms ease, box-shadow 150ms ease;
 }
 .pop-row:focus-within {
-  border-color: rgba(128, 206, 215, 0.6);
+  border-color: rgba(0, 126, 167, 0.55);
+  box-shadow: 0 0 0 3px rgba(0, 126, 167, 0.18);
 }
 .pop-currency {
   color: var(--ink-dim);
   font-size: 13px;
-  font-weight: 500;
+  font-weight: 600;
 }
 .pop-input {
   background: transparent;
   border: 0;
   outline: none;
-  color: var(--ink);
+  color: var(--ink-strong);
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   font-family: inherit;
   flex: 1 1 auto;
   width: 100%;
   padding: 10px 0;
   min-width: 0;
 }
-.pop-input-money {
-  font-variant-numeric: tabular-nums;
-}
+.pop-input-money { font-variant-numeric: tabular-nums; }
 
 /* ---------- Category list ---------- */
 
@@ -188,7 +185,7 @@ html, body {
   gap: 6px;
   padding: 10px 12px;
   border-radius: 12px;
-  background: rgba(204, 219, 220, 0.03);
+  background: var(--surface-1);
   border: 1px solid var(--line);
 }
 .pop-cat-head {
@@ -198,8 +195,8 @@ html, body {
 }
 .pop-cat-name {
   font-size: 13px;
-  font-weight: 500;
-  color: var(--ink);
+  font-weight: 600;
+  color: var(--ink-strong);
 }
 .pop-cat-remove {
   background: transparent;
@@ -214,12 +211,12 @@ html, body {
   transition: background 150ms ease, color 150ms ease;
 }
 .pop-cat-remove:hover {
-  background: rgba(211, 93, 74, 0.18);
+  background: color-mix(in srgb, var(--red) 14%, transparent);
   color: var(--red);
 }
 .pop-cat-spent {
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 700;
   font-size: 12.5px;
   white-space: nowrap;
 }
@@ -228,7 +225,7 @@ html, body {
   font-size: 12px;
   color: var(--ink-dim);
   padding: 10px 12px;
-  border: 1px dashed var(--line);
+  border: 1px dashed var(--line-strong);
   border-radius: 10px;
   text-align: center;
 }
@@ -237,9 +234,9 @@ html, body {
 
 .pop-bar {
   width: 100%;
-  height: 5px;
+  height: 6px;
   border-radius: 999px;
-  background: rgba(204, 219, 220, 0.07);
+  background: rgba(0, 50, 73, 0.08);
   overflow: hidden;
 }
 .pop-bar-fill {
@@ -247,9 +244,9 @@ html, body {
   border-radius: 999px;
   transition: width 500ms cubic-bezier(0.22, 1, 0.36, 1);
 }
-.pop-fill-green   { background: linear-gradient(90deg, #6d8c4a, #8fb55c); }
-.pop-fill-yellow  { background: linear-gradient(90deg, #b08c1f, #e1b942); }
-.pop-fill-red     { background: linear-gradient(90deg, #a23a2c, #d35d4a); }
+.pop-fill-green   { background: linear-gradient(90deg, color-mix(in srgb, var(--green) 75%, black), var(--green)); }
+.pop-fill-yellow  { background: linear-gradient(90deg, color-mix(in srgb, var(--yellow) 75%, black), var(--yellow)); }
+.pop-fill-red     { background: linear-gradient(90deg, color-mix(in srgb, var(--red) 75%, black), var(--red)); }
 
 .pop-tone-green   { color: var(--green); }
 .pop-tone-yellow  { color: var(--yellow); }
@@ -263,9 +260,7 @@ html, body {
   color: var(--ink-dim);
   font-variant-numeric: tabular-nums;
 }
-.pop-meta-dot {
-  color: var(--ink-faint);
-}
+.pop-meta-dot { color: var(--ink-faint); }
 
 /* ---------- Suggestions ---------- */
 
@@ -282,53 +277,57 @@ html, body {
   margin-right: 4px;
 }
 .pop-suggestion {
-  background: rgba(128, 206, 215, 0.08);
-  border: 1px solid rgba(128, 206, 215, 0.25);
+  background: color-mix(in srgb, var(--accent-soft) 18%, var(--surface-0));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
   color: var(--accent);
   font-size: 11.5px;
-  font-weight: 500;
+  font-weight: 600;
   padding: 4px 9px;
   border-radius: 999px;
   cursor: pointer;
   font-family: inherit;
-  transition: background 150ms ease, border-color 150ms ease;
+  transition: background 150ms ease, border-color 150ms ease, transform 100ms ease;
 }
 .pop-suggestion:hover {
-  background: rgba(128, 206, 215, 0.16);
-  border-color: rgba(128, 206, 215, 0.45);
+  background: color-mix(in srgb, var(--accent-soft) 30%, var(--surface-0));
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
 }
+.pop-suggestion:active { transform: scale(0.97); }
 
 /* ---------- Save / status ---------- */
 
 .pop-save {
-  background: linear-gradient(135deg, #007ea7, #80ced7);
+  background: linear-gradient(135deg, var(--accent), var(--accent-soft));
   border: 0;
-  height: 42px;
-  border-radius: 11px;
-  color: #003249;
+  height: 44px;
+  border-radius: 12px;
+  color: white;
   font-weight: 600;
   font-size: 13.5px;
   cursor: pointer;
   font-family: inherit;
   transition: filter 150ms ease, transform 100ms ease;
+  box-shadow:
+    0 8px 22px -8px color-mix(in srgb, var(--accent) 70%, transparent),
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
 }
-.pop-save:hover:not(:disabled) { filter: brightness(1.08); }
+.pop-save:hover:not(:disabled) { filter: brightness(1.06); }
 .pop-save:active:not(:disabled) { transform: scale(0.98); }
 .pop-save:disabled { opacity: 0.6; cursor: progress; }
 
 .pop-error {
   font-size: 12px;
   color: var(--red);
-  background: rgba(211, 93, 74, 0.12);
-  border: 1px solid rgba(211, 93, 74, 0.30);
+  background: color-mix(in srgb, var(--red) 10%, var(--surface-0));
+  border: 1px solid color-mix(in srgb, var(--red) 32%, transparent);
   border-radius: 10px;
   padding: 8px 10px;
 }
 .pop-success {
   font-size: 12px;
   color: var(--green);
-  background: rgba(143, 181, 92, 0.10);
-  border: 1px solid rgba(143, 181, 92, 0.28);
+  background: color-mix(in srgb, var(--green) 10%, var(--surface-0));
+  border: 1px solid color-mix(in srgb, var(--green) 28%, transparent);
   border-radius: 10px;
   padding: 8px 10px;
 }

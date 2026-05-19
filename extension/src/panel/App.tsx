@@ -8,6 +8,7 @@ import {
 import { detectHost, platformLabel } from "@/utils/domDetector";
 import { TaggedChips } from "./TaggedChips";
 import { TriggeredRulesList } from "./TriggeredRulesList";
+import { LogoMark } from "@/components/LogoMark";
 import "./Panel.css";
 
 type Phase = "loading" | "result" | "error";
@@ -190,7 +191,9 @@ export function App({ request, onContinue, onPause, onClose }: PanelProps) {
     <div className="kg-panel" role="dialog" aria-live="polite" aria-label="Thundrly analiz paneli">
       <div className="kg-header">
         <div className="kg-brand">
-          <div className="kg-logo">T</div>
+          <span className="kg-logo">
+            <LogoMark size={22} />
+          </span>
           <div className="kg-brand-text">
             <small>Thundrly</small>
             <strong>5 saniyelik kontrol</strong>

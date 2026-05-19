@@ -22,11 +22,11 @@
  */
 
 import { detectHost, findBuyButtons, type Host } from "./utils/domDetector";
-import { buildAnalyzeRequestAsync, extractCurrentObservation } from "./utils/productExtractor";
+import { buildAnalyzeRequestAsync, extractCurrentObservation, isProductPage } from "./utils/productExtractor";
 import { onUrlChange } from "./utils/urlWatcher";
 import { buildSessionContext, markPurchase, trackButtonForClickSpeed } from "./utils/sessionTracker";
 import { getInstallId } from "./utils/installId";
-import { mountPanel } from "./panel/mount";
+import { mountPanel, mountOnboarding } from "./panel/mount";
 
 const BYPASS_ATTR = "data-kg-bypass";
 const HANDLED_ATTR = "data-kg-handled";
@@ -84,6 +84,24 @@ function attachToButton(btn: HTMLElement) {
         // background-fetches /yorumlar if PDP scraping comes back empty.
         const request = await buildAnalyzeRequestAsync(host, { userId, session });
 
+        // Final-payload visibility — gated by the same debug flag as the
+        // extractor logs. Print the full shape so the user can confirm
+        // whether reviews + price + legal_min made it through before the
+        // request crosses the wire. Flip on with `window.__THUNDRLY_DEBUG = true`.
+        if ((window as unknown as Record<string, unknown>).__THUNDRLY_DEBUG) {
+          console.log("[Thundrly/req] outgoing AnalyzeRequest:", {
+            url: request.product.url,
+            title: request.product.title,
+            price: request.product.price,
+            originalPrice: request.product.originalPrice,
+            legalLowestPrice30d: request.product.legalLowestPrice30d,
+            category: request.product.category,
+            reviews: (request.reviews ?? []).length,
+            priceHistory: (request.priceHistory ?? []).length,
+            session: request.session,
+          });
+        }
+
         mountPanel({
           request,
           onContinue: () => {
@@ -122,11 +140,45 @@ function attachToButton(btn: HTMLElement) {
 }
 
 function attachAll() {
+  // Hard precondition: only intercept on a real PDP. Without this, the
+  // homepage "Sepete Ekle" quick-buttons (Trendyol product cards) capture
+  // a click whose extracted product is the page itself — i.e. price ₺0,
+  // title="Online Alışveriş Sitesi … | Trendyol", no reviews, no budget.
+  if (!isProductPage(host)) return;
   const buttons = findBuyButtons(host);
   buttons.forEach(attachToButton);
 }
 
+// ---------------------------------------------------------------
+// First-run onboarding — runs once per install, in-panel (no new tab).
+//
+// Storage key `thundrly_onboarded` flips to true after the user clicks
+// "Hazırım" on the final step. After that, the onboarding never shows
+// again on this device.
+// ---------------------------------------------------------------
+const ONBOARD_KEY = "thundrly_onboarded";
+
+async function maybeShowOnboarding() {
+  // Don't show on top-of-tab demo or unknown hosts (we only want this on
+  // a real shopping page where the user is about to use the product).
+  if (host === "unknown") return;
+  try {
+    const stored = await chrome.storage.local.get(ONBOARD_KEY);
+    if (stored?.[ONBOARD_KEY]) return;
+    mountOnboarding({
+      onFinish: () => {
+        chrome.storage.local
+          .set({ [ONBOARD_KEY]: true })
+          .catch((e) => console.warn("[Thundrly] onboarding flag set edilemedi:", e));
+      },
+    });
+  } catch (e) {
+    console.warn("[Thundrly] onboarding storage okunamadı:", e);
+  }
+}
+
 // İlk pass
+void maybeShowOnboarding();
 attachAll();
 
 // SPA / lazy-render sayfalar için DOM değişikliklerini izle.
@@ -202,4 +254,8 @@ onUrlChange((to, from) => {
 });
 
 // Debug: konsola bir kez sinyal yaz.
-console.log(`[Thundrly] content script aktif — host: ${host}`);
+console.log(
+  `[Thundrly] content script aktif — host: ${host}. ` +
+  "Sorun bildirimi için DevTools console'da çalıştır: " +
+  "window.__THUNDRLY_DEBUG = true; ardından Sepete Ekle'ye bas.",
+);

@@ -106,34 +106,69 @@ export const PLATFORM_PACKS: Partial<Record<Host, PlatformPack>> = {
       "img.product-detail-img",
     ],
     reviews: {
+      // Container selectors — ordered most-specific to most-permissive.
+      // Trendyol renames classes frequently; the wildcard tail catches
+      // future renames so long as "comment" or "review" stays in the
+      // class name somewhere.
       container: [
         ".comment-item",
         ".pr-rnr-cm-itm",
+        ".rnr-com-cm",
+        "[data-testid='review-card']",
+        "[data-testid='comment-card']",
         "[class*='ReviewsList-item']",
+        "[class*='ReviewCard']",
+        "[class*='CommentItem']",
+        "[class*='comment-item']",
+        // Last-resort wildcard: any element whose class contains 'comment'
+        // AND that has at least one text-bearing child. We filter junk
+        // in `_extractOneReview` (containers without rating + text are
+        // rejected).
+        "[class*='comment']:not([class*='list']):not([class*='form']):not([class*='input'])",
       ],
       rating: [
         ".comment-rating",
         ".pr-rnr-com-r",
+        ".rnr-com-r",
+        "[data-testid='rating']",
+        "[class*='RatingStars']",
+        "[class*='ReviewCard-rating']",
         "[class*='star']",
+        "[class*='Star']",
       ],
       text: [
         ".comment-text",
         ".pr-xc-w",
+        ".rnr-com-tx",
+        "[data-testid='review-text']",
+        "[data-testid='comment-text']",
         "[class*='ReviewCard-text']",
+        "[class*='CommentText']",
+        "[class*='comment-text']",
+        "p[class*='comment']",
+        "p[class*='Comment']",
       ],
       date: [
         ".comment-date",
         ".pr-rnr-com-d",
+        ".rnr-com-d",
+        "[data-testid='review-date']",
+        "[class*='ReviewCard-date']",
+        "[class*='CommentDate']",
         "time",
       ],
       author: [
         ".comment-info-item",
         ".pr-rnr-com-usr",
+        ".rnr-com-usr",
+        "[data-testid='reviewer-name']",
         "[class*='ReviewCard-author']",
+        "[class*='CommentUserName']",
       ],
       verified: [
         ".pr-xc-w-vr",
         "[class*='VerifiedPurchaseBadge']",
+        "[class*='ConfirmedPurchase']",
         "[data-testid='verified-purchase']",
       ],
       helpful: [
