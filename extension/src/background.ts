@@ -78,7 +78,15 @@ type FetchReviewsMessage = {
   type: "fetchReviews";
   payload: { url: string; host: Host };
 };
-type IncomingMessage = AnalyzeMessage | ObservationMessage | PurchaseMessage | FetchReviewsMessage;
+type OpenBudgetSetupMessage = {
+  type: "openBudgetSetup";
+};
+type IncomingMessage =
+  | AnalyzeMessage
+  | ObservationMessage
+  | PurchaseMessage
+  | FetchReviewsMessage
+  | OpenBudgetSetupMessage;
 
 chrome.runtime.onMessage.addListener((msg: IncomingMessage, sender, sendResponse) => {
   if (!isAllowedSender(sender)) {
@@ -166,6 +174,20 @@ chrome.runtime.onMessage.addListener((msg: IncomingMessage, sender, sendResponse
       try {
         const reviews = await fetchAndParseReviews(msg.payload.url, msg.payload.host);
         sendResponse({ ok: true, reviews });
+      } catch (e) {
+        sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
+      }
+    })();
+    return true;
+  }
+
+  if (msg?.type === "openBudgetSetup") {
+    (async () => {
+      try {
+        await chrome.tabs.create({
+          url: chrome.runtime.getURL("src/popup/index.html?setup=1"),
+        });
+        sendResponse({ ok: true });
       } catch (e) {
         sendResponse({ ok: false, error: e instanceof Error ? e.message : String(e) });
       }

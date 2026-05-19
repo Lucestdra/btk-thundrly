@@ -11,12 +11,12 @@
  *   - On save: PUT /api/user-budget for each changed category, sequentially
  *
  * The popup is intentionally read-mostly: spend tallies are accumulated
- * server-side via /api/purchases when the user clicks "Yine de Devam Et"
- * in the panel. We don't let users hand-edit `categorySpent` — keeping
- * the trail honest matters more than convenience.
+ * server-side via /api/purchases when the content script sees an order
+ * confirmation page after a pending checkout. We don't let users hand-edit
+ * `categorySpent` — keeping the trail honest matters more than convenience.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getInstallId } from "@/utils/installId";
 import { HEALTH_URL, USER_BUDGETS_URL, USER_BUDGET_GLOBAL_URL, USER_BUDGET_URL } from "@/config";
 import { LogoMark } from "@/components/LogoMark";
@@ -106,6 +106,7 @@ function monthLabel(periodStartIso: string): string {
 }
 
 export function App() {
+  const setupMode = useMemo(() => new URLSearchParams(location.search).get("setup") === "1", []);
   const [userId, setUserId] = useState<string | null>(null);
   const [summary, setSummary] = useState<BudgetSummary | null>(null);
   const [monthlyLimit, setMonthlyLimit] = useState<string>("");
@@ -115,6 +116,7 @@ export function App() {
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [health, setHealth] = useState<HealthStatus | null>(null);
+  const monthlyInputRef = useRef<HTMLInputElement | null>(null);
 
   const refresh = useCallback(async (uid: string) => {
     setLoading(true);
@@ -148,6 +150,16 @@ export function App() {
       await refresh(uid);
     })();
   }, [refresh]);
+
+  useEffect(() => {
+    if (!setupMode || loading) return;
+    monthlyInputRef.current?.focus();
+  }, [loading, setupMode]);
+
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-thundrly-setup", setupMode);
+    return () => document.documentElement.removeAttribute("data-thundrly-setup");
+  }, [setupMode]);
 
   const missingSuggestions = useMemo(
     () => SUGGESTED_CATEGORIES.filter((s) => !categories.some((c) => c.category.toLowerCase() === s.toLowerCase())),
@@ -268,6 +280,12 @@ export function App() {
         </div>
       )}
 
+      {setupMode && (
+        <div className="pop-setup">
+          İlk kullanım için aylık genel bütçeni belirle. Kategori limitleri opsiyonel.
+        </div>
+      )}
+
       {/* Overall monthly progress — the PRIMARY field in the hybrid model.
           The global envelope alone is enough for the budget agent to work
           on every category. Per-category limits below are optional and
@@ -277,6 +295,7 @@ export function App() {
         <div className="pop-row">
           <span className="pop-currency">₺</span>
           <input
+            ref={monthlyInputRef}
             id="monthly"
             className="pop-input pop-input-money"
             inputMode="numeric"
@@ -381,7 +400,7 @@ export function App() {
       </button>
 
       <p className="pop-footer">
-        Harcamalar, panelde <strong>Yine de Devam Et</strong>'e bastığında otomatik eklenir.
+        Harcamalar, ödeme sonrası sipariş onay sayfası görüldüğünde otomatik eklenir.
         Ayın başında otomatik sıfırlanır.
       </p>
 

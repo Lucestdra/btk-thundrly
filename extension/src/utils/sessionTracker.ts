@@ -8,10 +8,9 @@
  *     button and the corresponding click event. Short = impulsive.
  *   - currentHour: local-clock hour, integer 0-23.
  *   - purchasesToday: a counter stored in chrome.storage.local keyed by
- *     today's local date. Bumped externally via `markPurchase()` once
- *     the user actually completes a checkout (out of scope for V1 — the
- *     extension can't see that signal yet, so today's count is "the
- *     number of times the user clicked through the panel").
+ *     today's local date. Bumped externally via `markPurchase()` after
+ *     the content script sees an order-confirmation page for a pending
+ *     checkout.
  *   - searchedBefore: true if this URL has been seen in a previous tab
  *     session within the last 7 days. Stored as a small LRU in
  *     chrome.storage.local.

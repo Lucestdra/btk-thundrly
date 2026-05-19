@@ -72,7 +72,10 @@ export function mountOnboarding(opts: OnboardingMountOpts) {
   const root = createRoot(mountNode);
   activeRoot = root;
 
+  let finished = false;
   const finish = () => {
+    if (finished) return;
+    finished = true;
     opts.onFinish();
     unmountPanel();
   };

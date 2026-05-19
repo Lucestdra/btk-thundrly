@@ -27,6 +27,12 @@ import { onUrlChange } from "./utils/urlWatcher";
 import { buildSessionContext, markPurchase, trackButtonForClickSpeed } from "./utils/sessionTracker";
 import { getInstallId } from "./utils/installId";
 import { mountPanel, mountOnboarding } from "./panel/mount";
+import {
+  clearPendingPurchase,
+  getPendingPurchase,
+  isCheckoutSuccessPage,
+  rememberPendingPurchase,
+} from "./utils/purchaseTracker";
 
 const BYPASS_ATTR = "data-kg-bypass";
 const HANDLED_ATTR = "data-kg-handled";
@@ -46,8 +52,6 @@ function attachToButton(btn: HTMLElement) {
       if (btn.getAttribute(BYPASS_ATTR) === "1") {
         // Bypass tek seferlik — kullanıcı "Devam Et" dedi, gerçek satın alma akışı çalışsın.
         btn.removeAttribute(BYPASS_ATTR);
-        // The user committed to a purchase — bump today's count.
-        void markPurchase();
         return;
       }
 
@@ -121,23 +125,27 @@ function attachToButton(btn: HTMLElement) {
           request,
           onContinue: () => {
             btn.setAttribute(BYPASS_ATTR, "1");
-            // Record the committed purchase. Fire-and-forget — we don't
-            // want a slow API call to block the user's checkout flow. If
-            // the price is unknown we skip recording (sending 0 would be
-            // worse than nothing — it'd create a row with categoryLimit
-            // = 0 inheriting nothing useful).
+            // The user only chose to continue. That may be "add to cart",
+            // not a paid order, so keep a pending checkout and record spend
+            // only after we later see an order-confirmation page.
             if (request.product.price > 0) {
-              chrome.runtime
-                .sendMessage({
-                  type: "purchase",
-                  payload: {
-                    userId: request.userId,
-                    category: request.product.category,
-                    amount: request.product.price,
-                    currency: "TRY",
-                  },
+              void rememberPendingPurchase({
+                userId: request.userId,
+                category: request.product.category,
+                amount: request.product.price,
+                currency: "TRY",
+                productUrl: request.product.url,
+                title: request.product.title,
+                host,
+              })
+                .then((pending) => {
+                  console.log("[Thundrly] pending checkout kaydedildi:", {
+                    id: pending.id,
+                    amount: pending.amount,
+                    category: pending.category,
+                  });
                 })
-                .catch((err) => console.warn("[Thundrly] satın alma kaydedilemedi:", err));
+                .catch((err) => console.warn("[Thundrly] pending checkout kaydedilemedi:", err));
             }
             setTimeout(() => btn.click(), 0);
           },
@@ -185,6 +193,9 @@ async function maybeShowOnboarding() {
         chrome.storage.local
           .set({ [ONBOARD_KEY]: true })
           .catch((e) => console.warn("[Thundrly] onboarding flag set edilemedi:", e));
+        chrome.runtime
+          .sendMessage({ type: "openBudgetSetup" })
+          .catch((e) => console.warn("[Thundrly] budget setup sayfasi acilamadi:", e));
       },
     });
   } catch (e) {
@@ -243,6 +254,7 @@ console.log("[Thundrly] debug helper: window.__THUNDRLY_DUMP() çıktıyı kopya
 // SPA / lazy-render sayfalar için DOM değişikliklerini izle.
 const observer = new MutationObserver(() => {
   attachAll();
+  schedulePurchaseCompletionCheck();
 });
 observer.observe(document.body, { childList: true, subtree: true });
 
@@ -310,6 +322,7 @@ sendObservationIfNew();
 onUrlChange((to, from) => {
   console.log(`[Thundrly] SPA navigation: ${from} → ${to}`);
   scheduleObservation();
+  schedulePurchaseCompletionCheck(800);
 });
 
 // Debug: konsola bir kez sinyal yaz.
@@ -318,3 +331,66 @@ console.log(
   "Sorun bildirimi için DevTools console'da çalıştır: " +
   "window.__THUNDRLY_DEBUG = true; ardından Sepete Ekle'ye bas.",
 );
+
+// ---------------------------------------------------------------
+// Purchase completion tracking.
+//
+// Merchant/payment-provider APIs are not available to a browser extension.
+// The browser-side signal we can observe is: user continued from our panel,
+// then later landed on a supported shop's order-success page. Only then do
+// we send /api/purchases and bump purchasesToday.
+// ---------------------------------------------------------------
+
+let completionTimer: number | null = null;
+let completionInFlight = false;
+
+function schedulePurchaseCompletionCheck(delayMs = 500) {
+  if (completionTimer !== null) window.clearTimeout(completionTimer);
+  completionTimer = window.setTimeout(() => {
+    completionTimer = null;
+    void maybeRecordCompletedPurchase();
+  }, delayMs);
+}
+
+async function maybeRecordCompletedPurchase(): Promise<void> {
+  if (completionInFlight) return;
+
+  const pending = await getPendingPurchase();
+  if (!pending) return;
+  if (pending.host !== host) return;
+
+  const text = document.body?.innerText || "";
+  if (!isCheckoutSuccessPage(host, location.href, text)) return;
+
+  completionInFlight = true;
+  try {
+    const response = await chrome.runtime.sendMessage({
+      type: "purchase",
+      payload: {
+        userId: pending.userId,
+        category: pending.category,
+        amount: pending.amount,
+        currency: pending.currency,
+      },
+    }) as { ok?: boolean; error?: string };
+
+    if (!response?.ok) {
+      console.warn("[Thundrly] tamamlanan satin alma kaydedilemedi:", response?.error || response);
+      return;
+    }
+
+    await markPurchase();
+    await clearPendingPurchase(pending.id);
+    console.log("[Thundrly] odeme tamamlandi, satin alma kaydedildi:", {
+      amount: pending.amount,
+      category: pending.category,
+      orderPage: location.href,
+    });
+  } catch (e) {
+    console.warn("[Thundrly] tamamlanan satin alma kaydedilemedi:", e);
+  } finally {
+    completionInFlight = false;
+  }
+}
+
+schedulePurchaseCompletionCheck(800);

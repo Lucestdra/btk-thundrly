@@ -51,7 +51,7 @@ function StepVerdicts() {
 function StepAgents() {
   const agents = [
     { name: "Yorum", body: "Tekrar eden, sahte yorum kalıplarını tarar." },
-    { name: "Fiyat", body: "30-gün yasası + DB + Akakçe karşılaştırır." },
+    { name: "Fiyat", body: "30-gün yasası + DB + piyasa fiyatlarını karşılaştırır." },
     { name: "Bütçe", body: "Aylık ve kategori bütçeni dikkate alır." },
     { name: "Dürtü", body: "Sayfada geçen süre, saat, sıklığı ölçer." },
     { name: "Karar", body: "Dört sinyali birleştirip nihai rengi verir." },
