@@ -71,17 +71,24 @@ def test_impulse_still_flags_synthetic_30ms_click():
     assert result.score >= 20
 
 
-def test_impulse_does_not_flag_normal_15s_dwell():
-    """15s on page is a perfectly normal product-glance duration."""
-    result = impulse_agent.run(_req_with_session(timeOnPageSeconds=15))
+def test_impulse_flags_17s_dwell_as_light_signal():
+    """17s should not be zero evidence, but it should stay a light signal."""
+    result = impulse_agent.run(_req_with_session(timeOnPageSeconds=17))
     msgs = " ".join(f.message for f in result.findings)
-    assert "yalnızca" not in msgs.lower() or "saniye" not in msgs.lower()
+    assert "karar süresi kısa" in msgs
+    assert 0 < result.score < 25
 
 
 def test_impulse_still_flags_under_8s_dwell():
     result = impulse_agent.run(_req_with_session(timeOnPageSeconds=5))
     msgs = " ".join(f.message for f in result.findings)
     assert "saniye" in msgs
+
+
+def test_impulse_user_repro_17s_93ms_is_not_zero():
+    result = impulse_agent.run(_req_with_session(timeOnPageSeconds=17, clickSpeedMs=93))
+    assert result.score == 30
+    assert result.label == "Karışık Sinyal"
 
 
 # ---------- price_agent: single-data-point fallback ----------

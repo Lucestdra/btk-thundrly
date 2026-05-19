@@ -18,6 +18,7 @@ from pathlib import Path
 _TMPDIR = Path(tempfile.mkdtemp(prefix="thundrly-test-"))
 _TEST_DB = _TMPDIR / "test.db"
 os.environ["DATABASE_URL"] = f"sqlite:///{_TEST_DB.as_posix()}"
+os.environ["EXTERNAL_PRICE_COMPARISON_ENABLED"] = "0"
 
 # Rate-limit storage stays in-memory; no env override needed.
 

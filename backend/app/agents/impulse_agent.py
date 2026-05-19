@@ -33,7 +33,7 @@ def run(req: AnalyzeRequest) -> AgentResult:
     score = 0
 
     if s.timeOnPageSeconds < 8:
-        score += 30
+        score += 35
         findings.append(
             AgentFinding(
                 severity="warn",
@@ -41,12 +41,30 @@ def run(req: AnalyzeRequest) -> AgentResult:
             )
         )
 
+    elif s.timeOnPageSeconds < 20:
+        score += 15
+        findings.append(
+            AgentFinding(
+                severity="info",
+                message=f"Ürün sayfasında {int(s.timeOnPageSeconds)} saniye geçirildi; karar süresi kısa.",
+            )
+        )
+
     if s.clickSpeedMs < 60:
-        score += 20
+        score += 25
         findings.append(
             AgentFinding(
                 severity="warn",
                 message=f"Tıklama anormal hızlı ({int(s.clickSpeedMs)} ms) — otomatik form sinyali olabilir.",
+            )
+        )
+
+    elif s.clickSpeedMs < 120:
+        score += 15
+        findings.append(
+            AgentFinding(
+                severity="info",
+                message=f"Tıklama çok hızlı ({int(s.clickSpeedMs)} ms); hafif dürtü sinyali.",
             )
         )
 

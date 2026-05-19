@@ -13,6 +13,7 @@ Covers:
 from __future__ import annotations
 
 import copy
+import json
 
 from app.data.mock_data import EXAMPLES
 from app.models.schemas import UserBudget
@@ -156,6 +157,23 @@ def test_analyze_uses_global_when_extractor_category_is_unknown(client, db):
     assert r.status_code == 200
     body = r.json()
     budget_agent = body["agents"]["budgetAgent"]
+    assert budget_agent["label"] != "Bütçe Verisi Yok"
+
+
+def test_stream_uses_global_budget_too(client, db):
+    upsert_global(db, user_id="stream-globe", monthly_limit=5000.0)
+
+    payload = copy.deepcopy(EXAMPLES["red"])
+    payload["userId"] = "stream-globe"
+    payload["product"]["category"] = "Spor ve Outdoor"
+    payload.pop("userBudget")
+
+    with client.stream("POST", "/api/analyze-purchase/stream", json=payload) as r:
+        assert r.status_code == 200, r.text
+        events = [json.loads(line) for line in r.read().decode("utf-8").splitlines() if line.strip()]
+
+    verdict = next(e for e in events if e["event"] == "verdict")["response"]
+    budget_agent = verdict["agents"]["budgetAgent"]
     assert budget_agent["label"] != "Bütçe Verisi Yok"
 
 

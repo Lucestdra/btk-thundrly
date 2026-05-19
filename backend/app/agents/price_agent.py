@@ -21,7 +21,13 @@ from datetime import date, datetime, timedelta
 from statistics import median
 from typing import List, Optional
 
-from app.models.schemas import AgentFinding, AgentResult, AnalyzeRequest, PriceHistoryPoint
+from app.models.schemas import (
+    AgentFinding,
+    AgentResult,
+    AnalyzeRequest,
+    PriceComparisonOffer,
+    PriceHistoryPoint,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +40,10 @@ _SUSPICIOUS_DISCOUNT_RATIO = 1.15
 # percentage of each other. Keeps a single noisy outlier from collapsing
 # our confidence ladder.
 _SOURCE_AGREEMENT_TOLERANCE = 0.10
+
+# Current-market comparison tolerance. Prices inside +/-8% of the market
+# median are normal merchant spread; above that, the user should see it.
+_MARKET_TOLERANCE = 0.08
 
 
 def _parse_date(s: str) -> date | None:
@@ -61,10 +71,9 @@ def _suspicious_discount_check(
     """Multi-source cross-check on the merchant's claimed discount.
 
     ``sources`` maps a human-friendly source name (used in the message)
-    to that source's lowest-price reading over the recent window. The
-    canonical set today is ``{"yasal min", "kendi geçmişimiz", "Akakçe"}``
-    — but the function works for any subset; the caller passes only the
-    ones it actually has.
+    to that source's lowest-price reading. The caller may pass on-page
+    legal minimum, our own history, and/or current market comparison
+    values; the function works for any subset.
 
     Logic:
       * real_base = min of all source readings
@@ -109,6 +118,94 @@ def _suspicious_discount_check(
     return AgentFinding(severity=severity, message=message, tag="suspiciousDiscount")
 
 
+def _usable_comparisons(req: AnalyzeRequest) -> list[PriceComparisonOffer]:
+    """Deduplicate sane current-market offers."""
+    out: list[PriceComparisonOffer] = []
+    seen: set[tuple[str, float]] = set()
+    for offer in req.priceComparisons or []:
+        if offer.price <= 0:
+            continue
+        key = ((offer.title or offer.source).strip().casefold(), round(offer.price, 2))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(offer)
+    return out[:8]
+
+
+def _market_comparison_findings(
+    *,
+    displayed_price: float,
+    offers: list[PriceComparisonOffer],
+) -> tuple[int, list[AgentFinding], dict[str, float]]:
+    """Score current price against independent current offers.
+
+    Returns (score_bump, findings, suspicious-discount-source-values).
+    The third value lets the original-price inflation check use the
+    market low as another source without mixing current offers into
+    the historical 30-day window.
+    """
+    if displayed_price <= 0 or not offers:
+        return 0, [], {}
+
+    prices = [o.price for o in offers]
+    market_median = median(prices)
+    market_low = min(prices)
+    source_values = {"piyasa min": market_low}
+    source_names = ", ".join(_short_source(o.source) for o in offers[:3])
+    findings: list[AgentFinding] = []
+    score = 0
+
+    if len(offers) >= 2 and displayed_price > market_median * (1 + _MARKET_TOLERANCE):
+        over = int(round((displayed_price / market_median - 1) * 100))
+        score += 25
+        findings.append(
+            AgentFinding(
+                severity="warn",
+                message=(
+                    f"Piyasa karşılaştırması: ₺{displayed_price:.0f}, "
+                    f"{len(offers)} teklif medyanı ₺{market_median:.0f}'in %{over} üzerinde."
+                ),
+            )
+        )
+    elif displayed_price <= market_low * 1.03:
+        findings.append(
+            AgentFinding(
+                severity="info",
+                message=(
+                    f"Piyasa karşılaştırması: ₺{displayed_price:.0f}, "
+                    f"{len(offers)} bağımsız teklif içinde en düşük banda yakın."
+                ),
+            )
+        )
+    else:
+        findings.append(
+            AgentFinding(
+                severity="info",
+                message=(
+                    f"Piyasa karşılaştırması: {len(offers)} teklif bulundu "
+                    f"(medyan ₺{market_median:.0f}; kaynaklar: {source_names})."
+                ),
+            )
+        )
+
+    if len(offers) >= 2 and displayed_price > market_low * 1.25:
+        score += 10
+        findings.append(
+            AgentFinding(
+                severity="warn",
+                message=f"En düşük bağımsız teklif ₺{market_low:.0f}; mevcut fiyat belirgin daha yüksek.",
+            )
+        )
+
+    return score, findings, source_values
+
+
+def _short_source(source: str) -> str:
+    source = source.replace("Bing Shopping /", "").strip()
+    return source[:32] if source else "kaynak"
+
+
 def run(req: AnalyzeRequest) -> AgentResult:
     price = req.product.price
     original = req.product.originalPrice
@@ -124,6 +221,11 @@ def run(req: AnalyzeRequest) -> AgentResult:
 
     window_30 = _window_prices(req.priceHistory, 30, ref)
     window_90 = _window_prices(req.priceHistory, 90, ref)
+    comparisons = _usable_comparisons(req)
+    market_score, market_findings, market_sources = _market_comparison_findings(
+        displayed_price=price,
+        offers=comparisons,
+    )
 
     score = 0.0
 
@@ -132,16 +234,30 @@ def run(req: AnalyzeRequest) -> AgentResult:
         # on-page legal disclosure, which is a single but reliable
         # cross-check source.
         if legal_min is not None and original is not None:
+            sources = {"yasal min": legal_min, **market_sources}
             sus = _suspicious_discount_check(
                 displayed_price=price,
                 claimed_original=original,
-                sources={"yasal min": legal_min},
+                sources=sources,
             )
             if sus is not None:
                 findings.append(sus)
+                findings.extend(market_findings)
                 # We have at least one strong signal — let it land at a
                 # meaningful manipulation score so the verdict reflects it.
-                return AgentResult(score=55, label="Şüpheli İndirim", findings=findings)
+                final_score = max(55, min(100, 55 + market_score))
+                return AgentResult(score=final_score, label="Şüpheli İndirim", findings=findings)
+
+        if comparisons:
+            findings.extend(market_findings)
+            final_score = max(0, min(100, market_score))
+            if final_score >= 55:
+                label = "Piyasa Üstü"
+            elif final_score >= 25:
+                label = "Piyasa Kontrolü"
+            else:
+                label = "Piyasa Fiyatı Uygun"
+            return AgentResult(score=final_score, label=label, findings=findings)
 
         # Be honest about no-history. Returning score=45 with a generic
         # "Kısmi Manipülasyon" label (score 25-54) reads as a soft accusation
@@ -149,7 +265,7 @@ def run(req: AnalyzeRequest) -> AgentResult:
         # this dimension contributes nothing to the weighted decision.
         #
         # Two flavors of "no data":
-        #  - Brand-new product, nothing on Akakçe either → "Fiyat Geçmişi Yok"
+        #  - Brand-new product, no comparison/history either → "Fiyat Geçmişi Yok"
         #  - We DO know the displayed price but have no comparison points →
         #    "Tek Veri Noktası" (less alarming, more accurate framing)
         if price > 0:
@@ -239,14 +355,15 @@ def run(req: AnalyzeRequest) -> AgentResult:
 
         # Sinyal 5 — MULTI-SOURCE suspicious discount cross-check.
         # Combines the on-page "yasal 30 günün en düşük fiyatı" disclosure
-        # (when scraped by the extension) with our own DB / Akakçe-sourced
-        # history. Confidence rises with agreement: two sources confirming
+        # (when scraped by the extension) with our own DB history and
+        # current market comparison. Confidence rises with agreement: two sources confirming
         # an inflated "originalPrice" is a strong manipulation signal.
         if original and original > price:
             cross_sources: dict[str, float] = {}
             if legal_min is not None and legal_min > 0:
                 cross_sources["yasal min"] = legal_min
             cross_sources["30 gün medyanı"] = min_30
+            cross_sources.update(market_sources)
             sus = _suspicious_discount_check(
                 displayed_price=price,
                 claimed_original=original,
@@ -257,6 +374,10 @@ def run(req: AnalyzeRequest) -> AgentResult:
                 # Severity-tier the score bump: two-source agreement is a
                 # strong signal worth a substantial bump.
                 score += 30 if sus.severity == "risk" else 15
+
+        if comparisons:
+            score += market_score
+            findings.extend(market_findings)
 
     score = max(0, min(100, int(round(score))))
 
@@ -283,6 +404,7 @@ def run(req: AnalyzeRequest) -> AgentResult:
             "legal_min_30d": legal_min,
             "history_30d_count": len(window_30),
             "history_90d_count": len(window_90),
+            "comparison_count": len(comparisons),
         },
     )
     return AgentResult(score=score, label=label, findings=findings)

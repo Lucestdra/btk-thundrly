@@ -25,6 +25,9 @@ interface HealthStatus {
   online: boolean;
   gemini?: boolean;
   geminiModel?: string | null;
+  llmProvider?: string | null;
+  llmModel?: string | null;
+  llmReady?: boolean;
   error?: string;
 }
 
@@ -54,8 +57,21 @@ async function pingHealth(): Promise<HealthStatus> {
   try {
     const r = await fetch(HEALTH_URL, { cache: "no-store" });
     if (!r.ok) return { online: false, error: `HTTP ${r.status}` };
-    const data = (await r.json()) as { gemini?: boolean; geminiModel?: string | null };
-    return { online: true, gemini: !!data.gemini, geminiModel: data.geminiModel ?? null };
+    const data = (await r.json()) as {
+      gemini?: boolean;
+      geminiModel?: string | null;
+      llmProvider?: string | null;
+      llmModel?: string | null;
+      llmReady?: boolean;
+    };
+    return {
+      online: true,
+      gemini: !!data.gemini,
+      geminiModel: data.geminiModel ?? null,
+      llmProvider: data.llmProvider ?? null,
+      llmModel: data.llmModel ?? null,
+      llmReady: !!data.llmReady,
+    };
   } catch (e) {
     return { online: false, error: e instanceof Error ? e.message : String(e) };
   }
@@ -394,8 +410,12 @@ function DiagnosticsRow({
   let backendLabel = "Sunucu yoklanıyor…";
   if (health) {
     if (!health.online) { backendDot = "err"; backendLabel = `Sunucu yok (${health.error || "?"})`; }
-    else if (health.gemini) { backendDot = "ok"; backendLabel = `Gemini açık · ${health.geminiModel || ""}`; }
-    else { backendDot = "warn"; backendLabel = "Sunucu açık · Gemini KAPALI (heuristik mod)"; }
+    else if (health.llmReady || health.gemini) {
+      backendDot = "ok";
+      const provider = health.llmProvider === "openrouter" ? "OpenRouter" : "Gemini";
+      backendLabel = `${provider} açık · ${health.llmModel || health.geminiModel || ""}`;
+    }
+    else { backendDot = "warn"; backendLabel = "Sunucu açık · LLM KAPALI (heuristik mod)"; }
   }
   // Surface the actual persisted monthly limit the backend returned on
   // last refresh. If it's 0 here even though the user "saved" a budget,

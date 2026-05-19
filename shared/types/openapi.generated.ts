@@ -93,7 +93,7 @@ export interface paths {
         };
         /**
          * Liveness probe
-         * @description Process is up. Cheap; always 200 if the FastAPI worker can handle a request at all. Use for load-balancer health checks.
+         * @description Process is up. Cheap; always 200 if the FastAPI worker can handle a request at all. The `gemini` field signals whether the review + decision agents will actually call the LLM (true) or fall back to the deterministic heuristic (false) — the extension popup pings this so the user can verify their installation.
          */
         get: operations["health_api_health_get"];
         put?: never;
@@ -269,6 +269,8 @@ export interface components {
         AnalyzeRequest: {
             /** Platform */
             platform: string;
+            /** Pricecomparisons */
+            priceComparisons?: components["schemas"]["PriceComparisonOffer"][];
             /** Pricehistory */
             priceHistory?: components["schemas"]["PriceHistoryPoint"][];
             product: components["schemas"]["Product"];
@@ -314,6 +316,20 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * PriceComparisonOffer
+         * @description Current-market offer from an external comparison/search source.
+         */
+        PriceComparisonOffer: {
+            /** Price */
+            price: number;
+            /** Source */
+            source: string;
+            /** Title */
+            title?: string | null;
+            /** Url */
+            url?: string | null;
         };
         /** PriceHistoryPoint */
         PriceHistoryPoint: {

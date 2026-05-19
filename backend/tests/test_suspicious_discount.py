@@ -19,6 +19,7 @@ def _req(
     original: float | None,
     legal_min: float | None,
     history: list[tuple[str, float]] | None = None,
+    comparisons: list[tuple[str, float]] | None = None,
 ) -> AnalyzeRequest:
     return AnalyzeRequest.model_validate(
         {
@@ -36,6 +37,10 @@ def _req(
             "reviews": [],
             "priceHistory": [
                 {"date": d, "price": p} for d, p in (history or [])
+            ],
+            "priceComparisons": [
+                {"source": source, "price": p, "title": "Test ürünü"}
+                for source, p in (comparisons or [])
             ],
             "session": {
                 "timeOnPageSeconds": 60,
@@ -153,3 +158,17 @@ def test_run_handles_missing_legal_min_gracefully():
     result = price_agent.run(req)
     # No suspicious chip — claim is within believable band of history.
     assert not any(f.tag == "suspiciousDiscount" for f in result.findings)
+
+
+def test_run_uses_current_market_comparisons_without_history():
+    req = _req(
+        price=260,
+        original=None,
+        legal_min=None,
+        history=None,
+        comparisons=[("Bing Shopping / A", 190), ("Bing Shopping / B", 200), ("Bing Shopping / C", 210)],
+    )
+    result = price_agent.run(req)
+    assert result.score >= 25
+    assert result.label in {"Piyasa Kontrolü", "Piyasa Üstü"}
+    assert any("Piyasa karşılaştırması" in f.message for f in result.findings)

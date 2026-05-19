@@ -78,6 +78,31 @@ def run(req: AnalyzeRequest, *, force_refresh: bool = False) -> AgentResult:
                 "page_review_count": req.product.reviewCount,
             },
         )
+        if req.product.reviewCount and req.product.reviewCount > 0:
+            count = req.product.reviewCount
+            rating = req.product.rating
+            findings = [
+                AgentFinding(
+                    severity="info",
+                    message=(
+                        f"Sayfada {count} yorum/değerlendirme görünüyor; "
+                        "metinler alınamadığı için manipülasyon analizi sınırlı."
+                    ),
+                )
+            ]
+            if rating is not None:
+                findings.insert(
+                    0,
+                    AgentFinding(
+                        severity="info",
+                        message=f"Toplam puan {rating:.1f}/5 ve {count} yorum sinyali var.",
+                    ),
+                )
+            # Aggregate count/rating is partial evidence, not "no data".
+            # Keep score modest so it does not dominate text-level trust
+            # analysis, but stop telling the user there are no comments.
+            score = 18 if rating is not None and rating >= 4.0 and count >= 20 else 28
+            return AgentResult(score=score, label="Yorum Özeti Var", findings=findings)
         return AgentResult(
             score=35,
             label="Yorum Verisi Yok",

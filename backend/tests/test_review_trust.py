@@ -41,6 +41,36 @@ def setup_function(_):
     reset_cache()
 
 
+def test_aggregate_review_count_does_not_report_no_data():
+    req = AnalyzeRequest.model_validate(
+        {
+            "userId": "u",
+            "platform": "amazon",
+            "product": {
+                "title": "Stanley IceFlow",
+                "price": 1590,
+                "currency": "TRY",
+                "category": "Spor",
+                "url": "https://www.amazon.com.tr/dp/B0FLDJJ75H",
+                "rating": 4.7,
+                "reviewCount": 349,
+            },
+            "reviews": [],
+            "priceHistory": [],
+            "session": {
+                "timeOnPageSeconds": 60,
+                "clickSpeedMs": 150,
+                "currentHour": 14,
+                "purchasesToday": 0,
+            },
+        }
+    )
+    result = review_agent.run(req)
+    assert result.label == "Yorum Özeti Var"
+    assert result.score < 35
+    assert any("349" in f.message for f in result.findings)
+
+
 def test_duplicate_text_cluster_drops_trust_and_lifts_score():
     """Three near-identical 5★ reviews — classic dup cluster."""
     reviews = [

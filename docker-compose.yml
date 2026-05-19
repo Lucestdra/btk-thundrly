@@ -44,6 +44,14 @@ services:
       DATABASE_URL: postgresql+psycopg2://thundrly:${POSTGRES_PASSWORD}@postgres:5432/thundrly
       LOG_FORMAT: json
       ALLOWED_ORIGINS: https://thundrly.com,https://www.thundrly.com
+      # Preferred LLM path. OpenRouter exposes Gemini 2.5 Flash through
+      # an OpenAI-compatible API and avoids direct-Gemini retired-model
+      # outages such as gemini-1.5-flash returning 404.
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-google/gemini-2.5-flash}
+      OPENROUTER_SITE_URL: ${OPENROUTER_SITE_URL:-https://thundrly.com}
+      OPENROUTER_APP_TITLE: ${OPENROUTER_APP_TITLE:-Thundrly}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       # Default to a current model. `gemini-1.5-flash` was retired from
       # the v1beta API in Q1 2026 and now returns 404 NOT_FOUND, taking
@@ -54,6 +62,8 @@ services:
       # sync here means no fallback is needed on a clean deploy.
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
       GEMINI_CACHE_TTL_SECONDS: ${GEMINI_CACHE_TTL_SECONDS:-900}
+      EXTERNAL_PRICE_COMPARISON_ENABLED: ${EXTERNAL_PRICE_COMPARISON_ENABLED:-1}
+      EXTERNAL_PRICE_HISTORY_ENABLED: ${EXTERNAL_PRICE_HISTORY_ENABLED:-0}
     ports:
       - "127.0.0.1:8000:8000"
     networks:

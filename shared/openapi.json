@@ -96,6 +96,13 @@
             "title": "Platform",
             "type": "string"
           },
+          "priceComparisons": {
+            "items": {
+              "$ref": "#/components/schemas/PriceComparisonOffer"
+            },
+            "title": "Pricecomparisons",
+            "type": "array"
+          },
           "priceHistory": {
             "items": {
               "$ref": "#/components/schemas/PriceHistoryPoint"
@@ -229,6 +236,53 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "PriceComparisonOffer": {
+        "description": "Current-market offer from an external comparison/search source.",
+        "properties": {
+          "price": {
+            "exclusiveMaximum": 10000000.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Price",
+            "type": "number"
+          },
+          "source": {
+            "maxLength": 96,
+            "minLength": 1,
+            "title": "Source",
+            "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 512,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "maxLength": 2048,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "required": [
+          "source",
+          "price"
+        ],
+        "title": "PriceComparisonOffer",
         "type": "object"
       },
       "PriceHistoryPoint": {
@@ -1283,7 +1337,7 @@
     },
     "/api/health": {
       "get": {
-        "description": "Process is up. Cheap; always 200 if the FastAPI worker can handle a request at all. Use for load-balancer health checks.",
+        "description": "Process is up. Cheap; always 200 if the FastAPI worker can handle a request at all. The `gemini` field signals whether the review + decision agents will actually call the LLM (true) or fall back to the deterministic heuristic (false) — the extension popup pings this so the user can verify their installation.",
         "operationId": "health_api_health_get",
         "responses": {
           "200": {

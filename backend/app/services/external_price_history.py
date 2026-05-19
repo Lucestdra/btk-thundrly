@@ -29,7 +29,9 @@ Hardening (reliability sprint):
 
 * **Cache hard.** Each title's lookup is cached for 24 hours in process
   memory.
-* **Feature flag.** Set ``EXTERNAL_PRICE_HISTORY_ENABLED=0`` to disable.
+* **Feature flag.** Disabled by default because Akakçe frequently returns
+  bot challenges from server-side deployments. Set
+  ``EXTERNAL_PRICE_HISTORY_ENABLED=1`` to re-enable.
 """
 
 from __future__ import annotations
@@ -51,7 +53,7 @@ logger = logging.getLogger("thundrly.akakce")
 
 # ---------- Configuration ----------
 
-ENABLED = os.environ.get("EXTERNAL_PRICE_HISTORY_ENABLED", "1") not in ("0", "false", "False")
+ENABLED = os.environ.get("EXTERNAL_PRICE_HISTORY_ENABLED", "0") not in ("0", "false", "False")
 TIMEOUT_SECONDS = float(os.environ.get("EXTERNAL_PRICE_HISTORY_TIMEOUT", "10.0"))
 SEARCH_URL = "https://www.akakce.com/arama/"
 USER_AGENT = (

@@ -45,7 +45,7 @@ from app.models.schemas import (
     UserBudgetSummary,
 )
 from app.services.graph import _COMPILED as compiled_graph
-from app.services.orchestrator import analyze
+from app.services.orchestrator import analyze, prepare_request
 from app.services.price_history import get_recent, insert_observation
 from app.services.url_normalizer import normalize
 from app.services.user_budget import (
@@ -168,19 +168,8 @@ def analyze_purchase_stream(
     force_refresh: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    # Same priority chain as the non-streaming endpoint:
-    # body > crowdsource DB > external (Akakçe).
-    if not payload.priceHistory and payload.product.url:
-        fetched = get_recent(db, payload.product.url, days=90)
-        if fetched:
-            payload = payload.model_copy(update={"priceHistory": fetched})
-
-    if not payload.priceHistory and payload.product.title:
-        from app.services.external_price_history import fetch_for_product
-
-        external = fetch_for_product(payload.product.title)
-        if external:
-            payload = payload.model_copy(update={"priceHistory": external})
+    # Same enrichment path as the non-streaming endpoint.
+    payload = prepare_request(payload, db=db)
 
     def generate() -> Iterator[str]:
         try:

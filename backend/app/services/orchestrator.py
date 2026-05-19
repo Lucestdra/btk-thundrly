@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.models.schemas import AnalyzeRequest, AnalyzeResponse
 from app.services import graph as analysis_graph
 from app.services.category_classifier import classify as classify_category
+from app.services.external_price_comparison import fetch_for_product as fetch_price_comparisons
 from app.services.external_price_history import fetch_for_product as fetch_external_history
 from app.services.price_history import get_recent
 from app.services.user_budget import (
@@ -44,10 +45,20 @@ def analyze(
     db: Optional[Session] = None,
     force_refresh: bool = False,
 ) -> AnalyzeResponse:
+    req = prepare_request(req, db=db)
+    return analysis_graph.run(req, force_refresh=force_refresh)
+
+
+def prepare_request(
+    req: AnalyzeRequest,
+    *,
+    db: Optional[Session] = None,
+) -> AnalyzeRequest:
+    """Resolve DB/external evidence before either endpoint runs the graph."""
     # Price history resolution, in priority order:
     #   1. Body-supplied `priceHistory` (tests + synthetic fixtures).
     #   2. Crowdsource DB (last 90d for this product URL).
-    #   3. External source (Akakçe scrape, last 30d) — only when the
+    #   3. Legacy external history source (disabled by default) — only when the
     #      first two miss, so we don't pay the network cost for products
     #      we already know about.
     price_source = "body" if req.priceHistory else "none"
@@ -61,7 +72,14 @@ def analyze(
         external = fetch_external_history(req.product.title)
         if external:
             req = req.model_copy(update={"priceHistory": external})
-            price_source = "akakce"
+            price_source = "external-history"
+
+    comparison_source = "body" if req.priceComparisons else "none"
+    if not req.priceComparisons and req.product.title:
+        comparisons = fetch_price_comparisons(req.product.title)
+        if comparisons:
+            req = req.model_copy(update={"priceComparisons": comparisons})
+            comparison_source = "bing-shopping"
 
     logger.info(
         "analyze.start",
@@ -70,6 +88,8 @@ def analyze(
             "url": req.product.url[:120],
             "price_source": price_source,
             "history_points": len(req.priceHistory or []),
+            "comparison_source": comparison_source,
+            "comparison_offers": len(req.priceComparisons or []),
             "review_count": len(req.reviews or []),
             "has_legal_min": req.product.legalLowestPrice30d is not None,
             "has_original_price": req.product.originalPrice is not None,
@@ -92,7 +112,7 @@ def analyze(
         if chosen is not None:
             req = req.model_copy(update={"userBudget": chosen})
 
-    return analysis_graph.run(req, force_refresh=force_refresh)
+    return req
 
 
 def _resolve_budget(db: Session, req: AnalyzeRequest):

@@ -64,6 +64,7 @@ def _patch_client(monkeypatch):
         real_init(self, *args, **kwargs)
 
     monkeypatch.setattr(httpx.Client, "__init__", fake_init)
+    monkeypatch.setattr(eph, "ENABLED", True)
     eph.clear_cache()
     yield handler
     eph.clear_cache()

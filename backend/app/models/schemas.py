@@ -57,6 +57,15 @@ class PriceHistoryPoint(BaseModel):
     price: float
 
 
+class PriceComparisonOffer(BaseModel):
+    """Current-market offer from an external comparison/search source."""
+
+    source: str = Field(min_length=1, max_length=96)
+    price: float = Field(gt=0, lt=10_000_000)
+    title: Optional[str] = Field(default=None, max_length=512)
+    url: Optional[str] = Field(default=None, max_length=2048)
+
+
 class UserBudget(BaseModel):
     # Bounds: same ceiling as PriceObservationIn.price for consistency.
     # Negative limits are nonsensical; lower-bound is gt=0 so empty
@@ -100,6 +109,7 @@ class AnalyzeRequest(BaseModel):
     product: Product
     reviews: List[Review] = Field(default_factory=list)
     priceHistory: List[PriceHistoryPoint] = Field(default_factory=list)
+    priceComparisons: List[PriceComparisonOffer] = Field(default_factory=list)
     # When omitted, the backend resolves the budget for (userId,
     # product.category) from the `user_budgets` table — falling back to a
     # permissive default if no row exists.
